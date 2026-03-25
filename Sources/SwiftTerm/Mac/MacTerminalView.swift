@@ -504,10 +504,10 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
     }
 
-    let scrollerStyle: NSScroller.Style = .legacy
+    let scrollerStyle: NSScroller.Style = .overlay
 
     func getScrollerFrame() -> CGRect {
-        let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: scrollerStyle)
+        let scrollerWidth = NSScroller.scrollerWidth(for: .small, scrollerStyle: scrollerStyle)
         return NSRect(x: bounds.maxX - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
     }
 
@@ -528,6 +528,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             ])
         }
         scroller.scrollerStyle = scrollerStyle
+        scroller.controlSize = .small
         scroller.knobProportion = 0.1
         scroller.isEnabled = false
         if let progressBarView {
@@ -545,8 +546,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     /// to match macOS default colors for text and its background.
     public func configureNativeColors ()
     {
-        self.nativeForegroundColor = NSColor.textColor
-        self.nativeBackgroundColor = NSColor.textBackgroundColor
+        self.nativeForegroundColor = NSColor.labelColor
+        self.nativeBackgroundColor = NSColor.windowBackgroundColor
     }
     
     open func bufferActivated(source: Terminal) {
@@ -558,7 +559,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
         
     private var scrollerWidth: CGFloat {
-        NSScroller.scrollerWidth(for: .regular, scrollerStyle: scrollerStyle)
+        NSScroller.scrollerWidth(for: .small, scrollerStyle: scrollerStyle)
     }
 
     /**
