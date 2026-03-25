@@ -884,10 +884,29 @@ open class Terminal {
         }
     }
 
+    /// When `true`, the terminal ignores all Kitty keyboard protocol
+    /// push/pop/set requests and always reports flags as 0.
+    public var disableKittyKeyboardProtocol: Bool = true
+
     private func handleKittyKeyboardProtocol(pars: [Int], collect: cstring) -> Bool {
         guard collect.count == 1, let prefix = collect.first else {
             return false
         }
+
+        if disableKittyKeyboardProtocol {
+            switch prefix {
+            case UInt8(ascii: "?"):
+                // Report no flags
+                sendResponse(cc.CSI, "?0u")
+                return true
+            case UInt8(ascii: "="), UInt8(ascii: ">"), UInt8(ascii: "<"):
+                // Silently ignore push/pop/set
+                return true
+            default:
+                return false
+            }
+        }
+
         switch prefix {
         case UInt8(ascii: "?"):
             sendResponse(cc.CSI, "?\(keyboardEnhancementFlags.rawValue)u")
