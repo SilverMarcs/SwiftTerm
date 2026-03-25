@@ -519,29 +519,29 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
 
     func setupScroller()
     {
-        if scroller == nil {
-            scroller = NSScroller(frame: .zero)
-            scroller.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(scroller)
-
-            // Use Auto Layout to position the scroller. This ensures correct layout
-            // whether the parent view uses frame-based or constraint-based layout.
-            NSLayoutConstraint.activate([
-                scroller.trailingAnchor.constraint(equalTo: trailingAnchor),
-                scroller.topAnchor.constraint(equalTo: topAnchor),
-                scroller.bottomAnchor.constraint(equalTo: bottomAnchor),
-                scroller.widthAnchor.constraint(equalToConstant: scrollerWidth)
-            ])
-        }
-        scroller.scrollerStyle = scrollerStyle
-        scroller.controlSize = .small
-        scroller.knobProportion = 0.1
-        scroller.isEnabled = false
-        if let progressBarView {
-            addSubview(progressBarView, positioned: .above, relativeTo: scroller)
-        }
-        scroller.action = #selector(scrollerActivated)
-        scroller.target = self
+//        if scroller == nil {
+//            scroller = NSScroller(frame: .zero)
+//            scroller.translatesAutoresizingMaskIntoConstraints = false
+//            addSubview(scroller)
+//
+//            // Use Auto Layout to position the scroller. This ensures correct layout
+//            // whether the parent view uses frame-based or constraint-based layout.
+//            NSLayoutConstraint.activate([
+//                scroller.trailingAnchor.constraint(equalTo: trailingAnchor),
+//                scroller.topAnchor.constraint(equalTo: topAnchor),
+//                scroller.bottomAnchor.constraint(equalTo: bottomAnchor),
+//                scroller.widthAnchor.constraint(equalToConstant: scrollerWidth)
+//            ])
+//        }
+//        scroller.scrollerStyle = scrollerStyle
+//        scroller.controlSize = .small
+//        scroller.knobProportion = 0.1
+//        scroller.isEnabled = false
+//        if let progressBarView {
+//            addSubview(progressBarView, positioned: .above, relativeTo: scroller)
+//        }
+//        scroller.action = #selector(scrollerActivated)
+//        scroller.target = self
     }
 
     func updateScrollerFrame() {
@@ -629,9 +629,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
     
     func updateScroller () {
-        scroller.isEnabled = canScroll
-        scroller.doubleValue = scrollPosition
-        scroller.knobProportion = scrollThumbsize
+//        scroller.isEnabled = canScroll
+//        scroller.doubleValue = scrollPosition
+//        scroller.knobProportion = scrollThumbsize
     }
     
     var userScrolling = false
