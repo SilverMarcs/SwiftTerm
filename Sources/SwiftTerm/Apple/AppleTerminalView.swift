@@ -454,8 +454,16 @@ extension TerminalView {
         var nsattr: [NSAttributedString.Key:Any] = [
             .font: tf,
             .foregroundColor: fgColor,
-            .backgroundColor: bgColor
         ]
+        #if os(macOS)
+        // When using the window background, skip setting the background color for
+        // default-background cells so the window's wallpaper tint shows through.
+        if !(usesWindowBackground && bg == .defaultColor) {
+            nsattr[.backgroundColor] = bgColor
+        }
+        #else
+        nsattr[.backgroundColor] = bgColor
+        #endif
         if flags.contains (.underline) {
             let underlineColor = attribute.underlineColor.map {
                 mapColor(color: $0, isFg: true, isBold: isBold, useBrightColors: useBrightColors)
@@ -1492,7 +1500,7 @@ extension TerminalView {
         // Fills gaps at the end with the default terminal background
         let effectiveHeight = bounds.height - contentInsets.top - contentInsets.bottom
         let box = CGRect (x: 0, y: 0, width: bounds.width, height: contentInsets.bottom + effectiveHeight.truncatingRemainder(dividingBy: cellHeight))
-        if dirtyRect.intersects(box) {
+        if !usesWindowBackground && dirtyRect.intersects(box) {
             nativeBackgroundColor.setFill()
             context.fill ([box])
         }

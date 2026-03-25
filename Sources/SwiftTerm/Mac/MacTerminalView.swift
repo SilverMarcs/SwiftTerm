@@ -163,7 +163,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     var trueColors: [Attribute.Color:NSColor] = [:]
     var transparent = TTColor.transparent ()
     var isBigSur = true
-    
+    var usesWindowBackground = false
+
     /// This flag is automatically set to true after the initializer is called, if running on a system older than BigSur.
     /// Starting with BigSur any screen updates will invoke the draw() method with the whole region, regardless
     /// of how much changed.   Setting this to true, will disable this OS behavior, setting it to false, will keep
@@ -394,7 +395,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     func setupOptions ()
     {
         setupOptions (width: getEffectiveWidth (size: bounds.size), height: bounds.height - contentInsets.top - contentInsets.bottom)
-        layer?.backgroundColor = nativeBackgroundColor.cgColor
+        if !usesWindowBackground {
+            layer?.backgroundColor = nativeBackgroundColor.cgColor
+        }
     }
 
     /// This controls whether the backspace should send ^? or ^H, the default is ^?
@@ -551,6 +554,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     {
         self.nativeForegroundColor = NSColor.labelColor
         self.nativeBackgroundColor = NSColor.windowBackgroundColor
+        usesWindowBackground = true
+        layer?.backgroundColor = nil
     }
     
     open func bufferActivated(source: Terminal) {
@@ -661,8 +666,10 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         guard let currentContext = getCurrentGraphicsContext() else {
             return
         }
-        nativeBackgroundColor.setFill()
-        currentContext.fill([dirtyRect])
+        if !usesWindowBackground {
+            nativeBackgroundColor.setFill()
+            currentContext.fill([dirtyRect])
+        }
         drawTerminalContents (dirtyRect: dirtyRect, context: currentContext, bufferOffset: terminal.displayBuffer.yDisp)
     }
     
