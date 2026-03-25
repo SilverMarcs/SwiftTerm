@@ -166,7 +166,7 @@ extension TerminalView {
     /// Returns true if this changed the number of columns/rows, false otherwise
     @discardableResult
     func processSizeChange (newSize: CGSize) -> Bool {
-        let newRows = Int (newSize.height / cellDimension.height)
+        let newRows = Int ((newSize.height - contentInsets.top - contentInsets.bottom) / cellDimension.height)
         let newCols = Int (getEffectiveWidth (size: newSize) / cellDimension.width)
         
         if newCols != terminal.cols || newRows != terminal.rows {
@@ -1154,9 +1154,9 @@ extension TerminalView {
         #else
         // On Mac, we are drawing the terminal buffer
         let cellHeight = cellDimension.height
-        let boundsMaxY = bounds.maxY
-        let firstRow = displayBuffer.yDisp+Int ((boundsMaxY-dirtyRect.maxY)/cellHeight)
-        let lastRow = displayBuffer.yDisp+Int((boundsMaxY-dirtyRect.minY)/cellHeight)
+        let contentMaxY = bounds.maxY - contentInsets.top
+        let firstRow = displayBuffer.yDisp+Int ((contentMaxY-dirtyRect.maxY)/cellHeight)
+        let lastRow = displayBuffer.yDisp+Int((contentMaxY-dirtyRect.minY)/cellHeight)
         #endif
 
         let isAltBuffer = terminal.isCurrentBufferAlternate
@@ -1177,15 +1177,15 @@ extension TerminalView {
             }
             let renderMode = displayBuffer.lines [row].renderMode
             let lineOffset = calcLineOffset(forRow: row)
-            let lineOrigin = CGPoint(x: 0, y: frame.height - lineOffset)
-            
+            let lineOrigin = CGPoint(x: contentInsets.left, y: frame.height - contentInsets.top - lineOffset)
+
             switch renderMode {
             case .single:
                 break
             case .doubledDown:
                 context.saveGState()
                 let pivot = lineOrigin.y
-                let lineRect = CGRect (origin: CGPoint (x: 0, y: lineOrigin.y), size: CGSize (width: dirtyRect.width, height: cellDimension.height))
+                let lineRect = CGRect (origin: CGPoint (x: contentInsets.left, y: lineOrigin.y), size: CGSize (width: dirtyRect.width, height: cellDimension.height))
                 context.clip(to: [lineRect])
                 // Debug aid
                 //  context.setFillColor(CGColor(red: 0, green: Double (row)/25.0, blue: 0, alpha: 1))
@@ -1198,7 +1198,7 @@ extension TerminalView {
             case .doubledTop:
                 context.saveGState()
                 let pivot = lineOrigin.y + cellDimension.height
-                let lineRect = CGRect (origin: CGPoint (x: 0, y: lineOrigin.y), size: CGSize (width: dirtyRect.width, height: cellDimension.height))
+                let lineRect = CGRect (origin: CGPoint (x: contentInsets.left, y: lineOrigin.y), size: CGSize (width: dirtyRect.width, height: cellDimension.height))
 
                 context.clip(to: [lineRect])
                 
@@ -1490,7 +1490,8 @@ extension TerminalView {
         
 #if os(macOS)
         // Fills gaps at the end with the default terminal background
-        let box = CGRect (x: 0, y: 0, width: bounds.width, height: bounds.height.truncatingRemainder(dividingBy: cellHeight))
+        let effectiveHeight = bounds.height - contentInsets.top - contentInsets.bottom
+        let box = CGRect (x: 0, y: 0, width: bounds.width, height: contentInsets.bottom + effectiveHeight.truncatingRemainder(dividingBy: cellHeight))
         if dirtyRect.intersects(box) {
             nativeBackgroundColor.setFill()
             context.fill ([box])
@@ -1578,7 +1579,7 @@ extension TerminalView {
         terminal.clearUpdateRange ()
                 
         #if os(macOS)
-        let baseLine = frame.height
+        let baseLine = frame.height - contentInsets.top
         var region = CGRect (x: 0,
                              y: baseLine - (cellDimension.height + CGFloat(rowEnd) * cellDimension.height),
                              width: frame.width,
@@ -1670,10 +1671,10 @@ extension TerminalView {
         let doublePosition = buffer.lines [vy].renderMode == .single ? 1.0 : 2.0
         #if os(iOS) || os(visionOS)
         let offset = (cellDimension.height * (CGFloat(buffer.y+(buffer.yBase))))
-        let lineOrigin = CGPoint(x: 0, y: offset)
+        let lineOrigin = CGPoint(x: contentInsets.left, y: offset + contentInsets.top)
         #else
         let offset = (cellDimension.height * (CGFloat(buffer.y-(buffer.yDisp-buffer.yBase)+1)))
-        let lineOrigin = CGPoint(x: 0, y: frame.height - offset)
+        let lineOrigin = CGPoint(x: contentInsets.left, y: frame.height - contentInsets.top - offset)
         #endif
         caretView.frame.origin = CGPoint(x: lineOrigin.x + (cellDimension.width * doublePosition * CGFloat(buffer.x)), y: lineOrigin.y)
         caretView.setText (ch: buffer.lines [vy][buffer.x])

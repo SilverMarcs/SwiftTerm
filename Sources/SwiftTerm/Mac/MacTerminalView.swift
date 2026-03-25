@@ -87,6 +87,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
      * The delegate that the TerminalView uses to interact with its hosting
      */
     public weak var terminalDelegate: TerminalViewDelegate?
+
+    /// Insets applied to the terminal content area. The scrollbar remains at the view edge.
+    public var contentInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
     
     /// If true, the caret view will show different shapes depending on the focus
     /// otherwise, it will behave like it is focused
@@ -390,7 +393,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     func setupOptions ()
     {
-        setupOptions (width: getEffectiveWidth (size: bounds.size), height: bounds.height)
+        setupOptions (width: getEffectiveWidth (size: bounds.size), height: bounds.height - contentInsets.top - contentInsets.bottom)
         layer?.backgroundColor = nativeBackgroundColor.cgColor
     }
 
@@ -567,12 +570,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
      */
     open func getOptimalFrameSize () -> NSRect
     {
-        return NSRect (x: 0, y: 0, width: cellDimension.width * CGFloat(terminal.cols) + scrollerWidth, height: cellDimension.height * CGFloat(terminal.rows))
+        return NSRect (x: 0, y: 0, width: cellDimension.width * CGFloat(terminal.cols) + scrollerWidth + contentInsets.left + contentInsets.right, height: cellDimension.height * CGFloat(terminal.rows) + contentInsets.top + contentInsets.bottom)
     }
 
     func getEffectiveWidth (size: CGSize) -> CGFloat
     {
-        return (size.width - scrollerWidth)
+        return (size.width - scrollerWidth - contentInsets.left - contentInsets.right)
     }
     
     open func scrolled(source terminal: Terminal, yDisp: Int) {
@@ -658,6 +661,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         guard let currentContext = getCurrentGraphicsContext() else {
             return
         }
+        nativeBackgroundColor.setFill()
+        currentContext.fill([dirtyRect])
         drawTerminalContents (dirtyRect: dirtyRect, context: currentContext, bufferOffset: terminal.displayBuffer.yDisp)
     }
     
@@ -1706,8 +1711,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     // NSTextInputClient protocol implementation
     open func characterIndex(for point: NSPoint) -> Int {
         let local = convert(point, from: nil)
-        let col = Int(local.x / cellDimension.width)
-        let row = Int((bounds.height - local.y) / cellDimension.height)
+        let col = Int((local.x - contentInsets.left) / cellDimension.width)
+        let row = Int((bounds.height - contentInsets.top - local.y) / cellDimension.height)
         return row * terminal.cols + col
     }
     
@@ -1979,13 +1984,13 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     {
         func toInt (_ p: NSPoint) -> Position {
 
-            let x = min (max (p.x, 0), bounds.width)
+            let x = min (max (p.x - contentInsets.left, 0), bounds.width)
             let y = min (max (p.y, 0), bounds.height)
-            return Position (col: Int (x), row: Int (bounds.height-y))
+            return Position (col: Int (x), row: Int (bounds.height - contentInsets.top - y))
         }
         let displayBuffer = terminal.displayBuffer
-        let col = Int (point.x / cellDimension.width)
-        let row = Int ((frame.height-point.y) / cellDimension.height)
+        let col = Int ((point.x - contentInsets.left) / cellDimension.width)
+        let row = Int ((frame.height - contentInsets.top - point.y) / cellDimension.height)
         let colValue = min (max (0, col), terminal.cols-1)
         let bufferRow = row + displayBuffer.yDisp
         let maxRow = max (0, displayBuffer.lines.count - 1)

@@ -1294,6 +1294,8 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         self.window?.contentScaleFactor ?? 1
     }
     
+    var contentInsets: UIEdgeInsets { .zero }
+
     func getEffectiveWidth (size: CGSize) -> CGFloat
     {
         return size.width
