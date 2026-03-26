@@ -2345,8 +2345,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
     }
 
+    /// Callback invoked when the terminal bell fires (e.g. `\a`).
+    public var onBell: (() -> Void)?
+
     open func bell(source: Terminal) {
         terminalDelegate?.bell (source: self)
+        onBell?()
     }
 
     public func progressReport(source: Terminal, report: Terminal.ProgressReport) {
