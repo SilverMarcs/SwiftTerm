@@ -70,7 +70,7 @@ public struct TerminalOptions {
                                                        termName: "xterm-256color",
                                                        cursorStyle: .blinkBlock,
                                                        screenReaderMode: false,
-                                                       scrollback: 1000,
+                                                       scrollback: 4000,
                                                        tabStopWidth: 8,
                                                        enableSixelReported: true,
                                                        kittyImageCacheLimitBytes: 320 * 1024 * 1024,
