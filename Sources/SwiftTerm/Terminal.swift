@@ -5280,9 +5280,16 @@ open class Terminal {
                 }
 
                 // When the buffer is full and the user has scrolled up, keep the text
-                // stable unless ydisp is right at the top
+                // stable by adjusting yDisp for the trimmed line.  Once yDisp
+                // reaches 0 the content the user was reading has been trimmed
+                // out of the buffer, so resume auto-scrolling instead of
+                // leaving them stranded at the top.
                 if userScrolling {
-                    buffer.yDisp = max (buffer.yDisp - 1, 0)
+                    if buffer.yDisp > 0 {
+                        buffer.yDisp -= 1
+                    } else {
+                        userScrolling = false
+                    }
                 }
             }
         } else {
