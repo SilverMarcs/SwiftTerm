@@ -559,6 +559,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
     
     open func bufferActivated(source: Terminal) {
+        // Invalidate momentum tracking so that stale scroll-wheel events
+        // from the previous buffer are discarded.
+        scrollWheelBufferIsAlternate = nil
         updateScroller ()
     }
     
@@ -2260,10 +2263,53 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
     }
     
+    /// Tracks the buffer identity across scroll events so momentum scrolling
+    /// that started in one buffer (e.g. the alternate screen) is discarded
+    /// after a buffer switch.
+    private var scrollWheelBufferIsAlternate: Bool?
+
     public override func scrollWheel(with event: NSEvent) {
         if event.deltaY == 0 {
             return
         }
+
+        let isAlt = terminal.isDisplayBufferAlternate
+
+        // When a buffer switch occurs mid-gesture, discard stale momentum
+        // events that belonged to the previous buffer.
+        if let prev = scrollWheelBufferIsAlternate, prev != isAlt {
+            scrollWheelBufferIsAlternate = isAlt
+            // Ignore this event and any remaining momentum from the old buffer.
+            return
+        }
+        scrollWheelBufferIsAlternate = isAlt
+
+        // When mouse reporting is enabled, forward scroll wheel events to the
+        // terminal application (button 4 = scroll up, button 5 = scroll down)
+        // instead of scrolling the scrollback buffer.
+        if allowMouseReporting && terminal.mouseMode.sendButtonPress() {
+            let hit = calculateMouseHit(with: event)
+            let displayBuffer = terminal.displayBuffer
+            let screenRow = max(0, min(displayBuffer.rows - 1, hit.grid.row - displayBuffer.yDisp))
+            let button = event.deltaY > 0 ? 4 : 5
+            let flags = terminal.encodeButton(
+                button: button,
+                release: false,
+                shift: event.modifierFlags.contains(.shift),
+                meta: event.modifierFlags.contains(.option),
+                control: event.modifierFlags.contains(.control))
+            terminal.sendEvent(buttonFlags: flags, x: hit.grid.col, y: screenRow, pixelX: hit.pixels.col, pixelY: hit.pixels.row)
+            return
+        }
+
+        // The alternate screen buffer has no scrollback, so scrolling is a
+        // no-op.  Return early to prevent stale state and to avoid building
+        // up momentum that would spill into the normal buffer when the app
+        // exits the alternate screen.
+        if isAlt {
+            return
+        }
+
         let velocity = calcScrollingVelocity(delta: Int (abs (event.deltaY)))
         if event.deltaY > 0 {
             scrollUp (lines: velocity)
