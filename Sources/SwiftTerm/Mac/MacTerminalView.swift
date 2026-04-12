@@ -578,9 +578,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
     
     open func bufferActivated(source: Terminal) {
-        // Invalidate momentum tracking so that stale scroll-wheel events
-        // from the previous buffer are discarded.
-        scrollWheelBufferIsAlternate = nil
+        // // Invalidate momentum tracking so that stale scroll-wheel events
+        // // from the previous buffer are discarded.
+        // scrollWheelBufferIsAlternate = nil
         updateScroller ()
     }
     
@@ -2301,31 +2301,27 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
     }
     
-    /// Tracks the buffer identity across scroll events so momentum scrolling
-    /// that started in one buffer (e.g. the alternate screen) is discarded
-    /// after a buffer switch.
-    private var scrollWheelBufferIsAlternate: Bool?
+    // /// Tracks the buffer identity across scroll events so momentum scrolling
+    // /// that started in one buffer (e.g. the alternate screen) is discarded
+    // /// after a buffer switch.
+    // private var scrollWheelBufferIsAlternate: Bool?
 
     public override func scrollWheel(with event: NSEvent) {
         if event.deltaY == 0 {
             return
         }
 
-        let isAlt = terminal.isDisplayBufferAlternate
+        // // When a buffer switch occurs mid-gesture, discard stale momentum
+        // // events that belonged to the previous buffer.
+        // let isAlt = terminal.isDisplayBufferAlternate
+        // if let prev = scrollWheelBufferIsAlternate, prev != isAlt {
+        //     scrollWheelBufferIsAlternate = isAlt
+        //     // Ignore this event and any remaining momentum from the old buffer.
+        //     return
+        // }
+        // scrollWheelBufferIsAlternate = isAlt
 
-        // When a buffer switch occurs mid-gesture, discard stale momentum
-        // events that belonged to the previous buffer.
-        if let prev = scrollWheelBufferIsAlternate, prev != isAlt {
-            scrollWheelBufferIsAlternate = isAlt
-            // Ignore this event and any remaining momentum from the old buffer.
-            return
-        }
-        scrollWheelBufferIsAlternate = isAlt
-
-        // When mouse reporting is enabled, forward scroll wheel events to the
-        // terminal application (button 4 = scroll up, button 5 = scroll down)
-        // instead of scrolling the scrollback buffer.
-        if allowMouseReporting && terminal.mouseMode.sendButtonPress() {
+        if allowMouseReporting && terminal.mouseMode != .off {
             let hit = calculateMouseHit(with: event)
             let displayBuffer = terminal.displayBuffer
             let screenRow = max(0, min(displayBuffer.rows - 1, hit.grid.row - displayBuffer.yDisp))
@@ -2340,9 +2336,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             return
         }
 
-        // The alternate screen buffer has no scrollback — translate scroll
-        // events into arrow keys so apps like less/vim can handle them.
-        if isAlt {
+        if terminal.isDisplayBufferAlternate {
             let lines = calcScrollingVelocity(delta: Int(abs(event.deltaY)))
             for _ in 0..<lines {
                 if event.deltaY > 0 {
