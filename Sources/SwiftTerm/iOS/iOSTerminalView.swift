@@ -191,6 +191,12 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     var search: SearchService!
     var debug: UIView?
     var pendingDisplay: Bool = false
+    /// Debounce timer for sync-end render — coalesces rapid sync block sequences.
+    var syncEndRenderTimer: DispatchWorkItem? = nil
+    /// True from first BSU until syncSequenceSettleMs after last ESU.
+    var inSyncSequence: Bool = false
+    /// Milliseconds to wait after the last ESU before rendering.
+    var syncSequenceSettleMs: Int = 100
 #if canImport(MetalKit)
     var metalView: MTKView?
     var metalRenderer: MetalTerminalRenderer?
@@ -284,6 +290,9 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         self.fontSet = FontSet (font: font ?? FontSet.defaultFont)
         cellDimension = CellDimension(width: 1, height: 1)
         super.init (frame: frame)
+        isAccessibilityElement = true
+        accessibilityTraits.formUnion([.staticText, .causesPageTurn])
+        accessibilityTextualContext = .sourceCode
         setup()
     }
     
@@ -292,6 +301,9 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         self.fontSet = FontSet (font: FontSet.defaultFont)
         cellDimension = CellDimension(width: 1, height: 1)
         super.init (frame: frame)
+        isAccessibilityElement = true
+        accessibilityTraits.formUnion([.staticText, .causesPageTurn])
+        accessibilityTextualContext = .sourceCode
         setup()
     }
     
@@ -1494,6 +1506,31 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         }
     }
 
+    open override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+        let pageHeight = max(bounds.height, cellDimension.height)
+        let maxOffsetY = max(0, contentSize.height - bounds.height)
+        let targetOffsetY: CGFloat
+
+        switch direction {
+        case .down, .right, .next:
+            targetOffsetY = min(maxOffsetY, contentOffset.y + pageHeight)
+        case .up, .left, .previous:
+            targetOffsetY = max(0, contentOffset.y - pageHeight)
+        default:
+            return super.accessibilityScroll(direction)
+        }
+
+        guard targetOffsetY != contentOffset.y else {
+            return false
+        }
+
+        setContentOffset(CGPoint(x: contentOffset.x, y: targetOffsetY), animated: false)
+        setNeedsDisplay(bounds)
+        // Based on WWDC 2019 presentation: argument is nil
+        UIAccessibility.post(notification: .pageScrolled, argument: nil)
+        return true
+    }
+
     // iOS Keyboard input
     
     // UITextInputTraits
@@ -2097,6 +2134,8 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
 
     func ensureCaretIsVisible ()
     {
+        // Suppress during sync blocks and inter-block gaps.
+        guard !terminal.synchronizedOutputActive && !inSyncSequence else { return }
         let displayBuffer = terminal.displayBuffer
         contentOffset = CGPoint (x: 0, y: CGFloat (displayBuffer.lines.count-displayBuffer.rows)*cellDimension.height)
         terminal.userScrolling = false
@@ -2680,6 +2719,226 @@ extension TerminalViewDelegate {
     public func iTermContent (source: TerminalView, content: ArraySlice<UInt8>) {
     }
 }
+
+extension TerminalView: UIAccessibilityReadingContent {
+    private func accessibilityBaseAttributes() -> [NSAttributedString.Key: Any] {
+        getAttributes(CharData.defaultAttr, withUrl: false) ?? [.font: fontSet.normal]
+    }
+
+    private func accessibilityAttributedLine(_ row: Int, endCol: Int = -1) -> NSAttributedString {
+        guard row >= 0, row < terminal.displayBuffer.lines.count else {
+            return NSAttributedString(string: "")
+        }
+
+        let line = terminal.displayBuffer.lines[row]
+        let rawLimit = endCol == -1 ? line.count : min(endCol, line.count)
+        let lineLimit = min(rawLimit, line.getTrimmedLength())
+        guard line.hasAnyContent(), lineLimit > 0 else {
+            return NSAttributedString(string: "")
+        }
+
+        let lineInfo = buildAttributedString(row: row, line: line, cols: lineLimit)
+        let result = NSMutableAttributedString()
+        for segment in lineInfo.segments {
+            result.append(segment.attributedString)
+        }
+        return result
+    }
+
+    private func accessibilityAttributedDisplayText(start: Position, end: Position) -> NSAttributedString {
+        let buffer = terminal.displayBuffer
+        guard !buffer.lines.isEmpty else {
+            return NSAttributedString(string: "")
+        }
+
+        var start = start
+        var end = end
+
+        switch Position.compare(start, end) {
+        case .equal:
+            return NSAttributedString(string: "")
+        case .after:
+            swap(&start, &end)
+        case .before:
+            break
+        }
+
+        guard start.row >= 0, start.row <= buffer.lines.count else {
+            return NSAttributedString(string: "")
+        }
+
+        if end.row >= buffer.lines.count {
+            end.row = buffer.lines.count - 1
+        }
+
+        let newline = NSAttributedString(string: "\n", attributes: accessibilityBaseAttributes())
+        var lines: [NSMutableAttributedString] = [NSMutableAttributedString()]
+        var currentLine = lines[0]
+        var blanks: [NSMutableAttributedString] = []
+
+        func addBlanks() {
+            guard !blanks.isEmpty else {
+                return
+            }
+            for blank in blanks {
+                lines.append(blank)
+            }
+            currentLine = blanks.last!
+            blanks.removeAll()
+        }
+
+        var bufferLine = buffer.lines[start.row]
+        if bufferLine.hasAnyContent() {
+            currentLine.append(accessibilityAttributedLine(start.row, endCol: start.row < end.row ? -1 : end.col))
+        }
+
+        var line = start.row + 1
+        var isWrapped = false
+        while line < end.row {
+            bufferLine = buffer.lines[line]
+            isWrapped = bufferLine.isWrapped
+
+            if bufferLine.hasAnyContent() {
+                addBlanks()
+
+                if !isWrapped {
+                    currentLine = NSMutableAttributedString()
+                    lines.append(currentLine)
+                }
+
+                currentLine.append(accessibilityAttributedLine(line))
+            } else {
+                if !isWrapped || blanks.isEmpty {
+                    blanks.append(NSMutableAttributedString())
+                }
+            }
+
+            line += 1
+        }
+
+        if end.row != start.row {
+            bufferLine = buffer.lines[end.row]
+            if bufferLine.hasAnyContent() {
+                addBlanks()
+
+                isWrapped = bufferLine.isWrapped
+                if !isWrapped {
+                    currentLine = NSMutableAttributedString()
+                    lines.append(currentLine)
+                }
+
+                currentLine.append(accessibilityAttributedLine(end.row, endCol: end.col))
+            }
+        }
+
+        let result = NSMutableAttributedString()
+        for (index, attributedLine) in lines.enumerated() {
+            if index > 0 {
+                result.append(newline)
+            }
+            result.append(attributedLine)
+        }
+        return result
+    }
+
+    public func accessibilityLineNumber(for point: CGPoint) -> Int {
+        return Int(floor(max(point.y,0) / cellDimension.height))
+    }
+    
+    func startingLine(forLineNumber lineNumber: Int) -> Int {
+        let lineWidth = terminal.buffer.lines[lineNumber].count
+        var startingLine = lineNumber
+        while startingLine >= 1 {
+            startingLine -= 1
+            if terminal.buffer.lines[startingLine + 1].isWrapped {
+                continue
+            }
+            let start = Position(col: 0, row: startingLine)
+            let end = Position(col: terminal.buffer.lines[startingLine].count, row: startingLine)
+            let text =  terminal.getDisplayText(start: start, end: end)
+            if (text.count != terminal.buffer.lines[startingLine].count || text.last != " ") {
+                // previous line is incomplete. Don't use it
+                startingLine += 1
+                break
+            }
+        }
+        return startingLine
+    }
+
+    func endingLine(forLineNumber lineNumber: Int) -> Int {
+        let lineWidth = terminal.buffer.lines[lineNumber].count
+        var endingLine = lineNumber
+        while (endingLine < terminal.buffer.lines.count - 1) {
+            let start = Position(col: 0, row: endingLine)
+            let end = Position(col: terminal.buffer.lines[endingLine].count, row: endingLine)
+            let text =  terminal.getDisplayText(start: start, end: end)
+            if (text.count != terminal.buffer.lines[endingLine].count || text.last != " ")
+            && !terminal.buffer.lines[endingLine + 1].isWrapped {
+                // this line is incomplete. We stop here.
+                break
+            }
+            endingLine += 1
+        }
+        return endingLine
+    }
+
+    public func accessibilityContent(forLineNumber lineNumber: Int) -> String? {
+        var startingLine = startingLine(forLineNumber: lineNumber)
+        var endingLine = endingLine(forLineNumber: lineNumber)
+        let start = Position(col: 0, row: startingLine)
+        let end = Position(col: terminal.buffer.lines[endingLine].count,
+                           row: endingLine)
+        var text =  terminal.getDisplayText(start: start, end: end)
+        return terminal.getDisplayText(start: start, end: end)
+    }
+
+    public func accessibilityFrame(forLineNumber lineNumber: Int) -> CGRect {
+        let topVisibleLine = Int(contentOffset.y/cellDimension.height)
+        let offset = contentOffset.y - CGFloat(topVisibleLine) * cellDimension.height
+        var startingLine = startingLine(forLineNumber: lineNumber)
+        var endingLine = endingLine(forLineNumber: lineNumber)
+        var verticalWidth = CGFloat(endingLine - startingLine + 1)
+        let lineOffset =  cellDimension.height * CGFloat (startingLine - topVisibleLine + 1)
+        let lineOrigin = CGPoint(x: 0, y: lineOffset)
+        let columnCount = terminal.buffer.lines[lineNumber].count
+        var rect = CGRect(
+            x: lineOrigin.x,
+            y: lineOrigin.y + 3 - offset,
+            width: CGFloat(columnCount) * cellDimension.width,
+            height: verticalWidth * cellDimension.height)
+        return rect
+    }
+
+    public func accessibilityPageContent() -> String? {
+        let pageHeight = max(bounds.height, cellDimension.height)
+        let lines = Int(floor(pageHeight/cellDimension.height))
+        let startLine = Int(floor(contentOffset.y / cellDimension.height))
+        let start = Position(col: 0, row: startLine)
+        let end = Position(col: terminal.buffer.lines[startLine].count,
+                           row: startLine + lines)
+        return terminal.getDisplayText(start: start, end: end)
+    }
+
+    public func accessibilityAttributedContent(forLineNumber lineNumber: Int) -> NSAttributedString? {
+        var startingLine = startingLine(forLineNumber: lineNumber)
+        var endingLine = endingLine(forLineNumber: lineNumber)
+        var start = Position(col: 0, row: startingLine)
+        var end = Position(col: terminal.buffer.lines[endingLine].count,
+                           row: endingLine)
+        return accessibilityAttributedDisplayText(start: start, end: end)
+    }
+
+    public func accessibilityAttributedPageContent() -> NSAttributedString? {
+        let pageHeight = max(bounds.height, cellDimension.height)
+        let lines = Int(floor(pageHeight/cellDimension.height))
+        let startLine = Int(floor(contentOffset.y / cellDimension.height))
+        let start = Position(col: 0, row: startLine)
+        let end = Position(col: terminal.buffer.lines[startLine].count,
+                           row: startLine + lines)
+        return accessibilityAttributedDisplayText(start: start, end: end)
+    }
+}
+
 
 #if canImport(UIKit) && DEBUG
 #Preview {

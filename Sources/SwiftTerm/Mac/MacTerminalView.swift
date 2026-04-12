@@ -49,6 +49,13 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         return true
     }()
 #endif
+    private static let regularArrowKeyCodes: Set<UInt16> = [
+        UInt16(kVK_LeftArrow),
+        UInt16(kVK_RightArrow),
+        UInt16(kVK_DownArrow),
+        UInt16(kVK_UpArrow)
+    ]
+
     struct FontSet {
         public let normal: NSFont
         let bold: NSFont
@@ -109,6 +116,18 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     private var findBarOptions: SearchOptions = SearchOptions()
     var debug: TerminalDebugView?
     var pendingDisplay: Bool = false
+    /// Debounce timer for sync-end render — coalesces rapid sync block sequences.
+    var syncEndRenderTimer: DispatchWorkItem? = nil
+    /// True from first BSU until syncSequenceSettleMs after last ESU.
+    var inSyncSequence: Bool = false
+    /// Milliseconds to wait after the last ESU before rendering.
+    /// Terminal multiplexers deliver screen repaints as multiple BSU/ESU
+    /// pairs across separate I/O callbacks. This window lets the full
+    /// sequence arrive before rendering one atomic frame.
+    /// Note: tmux handles DEC 2026 internally, so this debounce only
+    /// affects applications sending BSU/ESU directly. The default of 16ms
+    /// (one frame at 60fps) is sufficient for natural I/O coalescing.
+    public var syncSequenceSettleMs: Int = 16
 #if canImport(MetalKit)
     var metalView: MTKView?
     var metalRenderer: MetalTerminalRenderer?
@@ -1077,34 +1096,44 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     public override func doCommand(by selector: Selector) {
         if !terminal.keyboardEnhancementFlags.isEmpty {
+            let mods: KittyKeyboardModifiers
+            if let pending = pendingKittyKeyEvent {
+                mods = kittyModifiers(from: pending.event, includeOption: optionAsMetaKey)
+            } else {
+                mods = []
+            }
             switch selector {
             case #selector(insertNewline(_:)):
-                if sendKittyFunctionalKey(.enter) { return }
+                if sendKittyFunctionalKey(.enter, modifiers: mods) { return }
             case #selector(cancelOperation(_:)):
-                if sendKittyFunctionalKey(.escape) { return }
+                if sendKittyFunctionalKey(.escape, modifiers: mods) { return }
             case #selector(deleteBackward(_:)):
-                if sendKittyFunctionalKey(.backspace) { return }
+                if sendKittyFunctionalKey(.backspace, modifiers: mods) { return }
             case #selector(moveUp(_:)):
-                if sendKittyFunctionalKey(.up) { return }
+                if sendKittyFunctionalKey(.up, modifiers: mods) { return }
             case #selector(moveDown(_:)):
-                if sendKittyFunctionalKey(.down) { return }
+                if sendKittyFunctionalKey(.down, modifiers: mods) { return }
             case #selector(moveLeft(_:)):
-                if sendKittyFunctionalKey(.left) { return }
+                if sendKittyFunctionalKey(.left, modifiers: mods) { return }
             case #selector(moveRight(_:)):
-                if sendKittyFunctionalKey(.right) { return }
+                if sendKittyFunctionalKey(.right, modifiers: mods) { return }
             case #selector(insertTab(_:)):
-                if sendKittyFunctionalKey(.tab) { return }
+                if sendKittyFunctionalKey(.tab, modifiers: mods) { return }
             case #selector(insertBacktab(_:)):
-                if sendKittyFunctionalKey(.tab, modifiers: [.shift]) { return }
+                if sendKittyFunctionalKey(.tab, modifiers: mods.union([.shift])) { return }
             case #selector(moveToBeginningOfLine(_:)):
-                if sendKittyFunctionalKey(.home) { return }
+                if sendKittyFunctionalKey(.home, modifiers: mods) { return }
+            case #selector(scrollToBeginningOfDocument(_:)):
+                if sendKittyFunctionalKey(.home, modifiers: mods) { return }
             case #selector(moveToEndOfLine(_:)):
-                if sendKittyFunctionalKey(.end) { return }
+                if sendKittyFunctionalKey(.end, modifiers: mods) { return }
+            case #selector(scrollToEndOfDocument(_:)):
+                if sendKittyFunctionalKey(.end, modifiers: mods) { return }
             case #selector(scrollPageUp(_:)):
                 fallthrough
             case #selector(pageUp(_:)):
                 if terminal.applicationCursor {
-                    if sendKittyFunctionalKey(.pageUp) { return }
+                    if sendKittyFunctionalKey(.pageUp, modifiers: mods) { return }
                 } else {
                     pageUp()
                     return
@@ -1113,7 +1142,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
                 fallthrough
             case #selector(pageDown(_:)):
                 if terminal.applicationCursor {
-                    if sendKittyFunctionalKey(.pageDown) { return }
+                    if sendKittyFunctionalKey(.pageDown, modifiers: mods) { return }
                 } else {
                     pageDown()
                     return
@@ -1143,7 +1172,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             send (EscapeSequences.cmdBackTab)
         case #selector(moveToBeginningOfLine(_:)):
             send (terminal.applicationCursor ? EscapeSequences.moveHomeApp : EscapeSequences.moveHomeNormal)
+        case #selector(scrollToBeginningOfDocument(_:)):
+            send (terminal.applicationCursor ? EscapeSequences.moveHomeApp : EscapeSequences.moveHomeNormal)
         case #selector(moveToEndOfLine(_:)):
+            send (terminal.applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal)
+        case #selector(scrollToEndOfDocument(_:)):
             send (terminal.applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal)
         case #selector(scrollPageUp(_:)):
             fallthrough
@@ -1366,7 +1399,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
               let scalar = chars.unicodeScalars.first else {
             return nil
         }
-        if event.modifierFlags.contains(.numericPad) {
+        if event.modifierFlags.contains(.numericPad),
+           !Self.regularArrowKeyCodes.contains(event.keyCode) {
             switch Int(scalar.value) {
             case NSUpArrowFunctionKey:
                 return .keypadUp
@@ -2318,7 +2352,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         if event.deltaY > 0 {
             scrollUp (lines: velocity)
         } else {
-            scrollDown(lines: velocity)
+            scrollDown (lines: velocity)
         }
     }
     
@@ -2467,6 +2501,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     func ensureCaretIsVisible ()
     {
+        // Suppress during sync blocks and inter-block gaps.
+        guard !terminal.synchronizedOutputActive && !inSyncSequence else { return }
         let displayBuffer = terminal.displayBuffer
         let realCaret = displayBuffer.y + displayBuffer.yBase
         let viewportEnd = displayBuffer.yDisp + displayBuffer.rows
