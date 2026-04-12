@@ -2340,11 +2340,17 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             return
         }
 
-        // The alternate screen buffer has no scrollback, so scrolling is a
-        // no-op.  Return early to prevent stale state and to avoid building
-        // up momentum that would spill into the normal buffer when the app
-        // exits the alternate screen.
+        // The alternate screen buffer has no scrollback — translate scroll
+        // events into arrow keys so apps like less/vim can handle them.
         if isAlt {
+            let lines = calcScrollingVelocity(delta: Int(abs(event.deltaY)))
+            for _ in 0..<lines {
+                if event.deltaY > 0 {
+                    sendKeyUp()
+                } else {
+                    sendKeyDown()
+                }
+            }
             return
         }
 
