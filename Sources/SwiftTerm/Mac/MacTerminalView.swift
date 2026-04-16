@@ -111,9 +111,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
 
     var accessibility: AccessibilityService = AccessibilityService()
     var search: SearchService!
-    private var findBar: TerminalFindBarView?
-    private var findBarTerm: String = ""
-    private var findBarOptions: SearchOptions = SearchOptions()
+    // Native NSTextFinder integration (see MacTerminalViewTextFinder.swift).
+    var terminalTextFinder: NSTextFinder?
+    var terminalFindClient: TerminalFindClient?
+    var terminalFindBarView: NSView?
+    var terminalIsFindBarVisible: Bool = false
     var debug: TerminalDebugView?
     var pendingDisplay: Bool = false
     /// Debounce timer for sync-end render — coalesces rapid sync block sequences.
@@ -163,7 +165,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     /// Marked (uncommitted) text from an input source (IME, dictation, etc.).
     private var markedTextStorage: NSAttributedString?
     private var markedSelectedRange: NSRange = NSRange(location: NSNotFound, length: 0)
-    private var markedTextOverlay: NSTextField?
+    private var markedTextOverlay: NSTextView?
     private var progressBarView: TerminalProgressBarView?
     private var progressReportTimer: Timer?
     private var lastProgressValue: UInt8?
@@ -242,6 +244,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         setupOptions()
         setupProgressBar()
         setupFocusNotification()
+        setupTextFinder()
     }
 
 #if canImport(MetalKit)
@@ -1279,63 +1282,80 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             return
         }
 
-        let overlay: NSTextField
+        let overlay: NSTextView
         if let existing = markedTextOverlay {
             overlay = existing
         } else {
-            overlay = NSTextField(labelWithString: "")
-            overlay.isBezeled = false
-            overlay.isEditable = false
-            overlay.drawsBackground = true
-            overlay.backgroundColor = nativeBackgroundColor.withAlphaComponent(0.9)
-            overlay.lineBreakMode = .byWordWrapping
-            overlay.maximumNumberOfLines = 0
-            overlay.cell?.wraps = true
-            overlay.cell?.usesSingleLineMode = false
-            overlay.wantsLayer = true
-            overlay.layer?.cornerRadius = 3
-            addSubview(overlay, positioned: .above, relativeTo: nil)
-            markedTextOverlay = overlay
+            let tv = NSTextView(frame: .zero)
+            tv.isEditable = false
+            tv.isSelectable = false
+            tv.drawsBackground = false
+            tv.isRichText = true
+            tv.textContainerInset = .zero
+            tv.textContainer?.lineFragmentPadding = 0
+            addSubview(tv, positioned: .above, relativeTo: nil)
+            markedTextOverlay = tv
+            overlay = tv
         }
 
-        // Style the text to match the terminal font/colors with an underline.
-        let displayString = NSMutableAttributedString(attributedString: markedTextStorage)
-        let fullRange = NSRange(location: 0, length: displayString.length)
-        displayString.addAttributes([
-            .font: font,
-            .foregroundColor: nativeForegroundColor,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-        ], range: fullRange)
-        overlay.attributedStringValue = displayString
+        // Match terminal line metrics so wrapped lines line up with terminal rows.
+        let lineHeight = cellDimension.height
+        let para = NSMutableParagraphStyle()
+        para.minimumLineHeight = lineHeight
+        para.maximumLineHeight = lineHeight
+        para.lineBreakMode = .byWordWrapping
 
-        // Allow the overlay to wrap within the available view width instead of
-        // growing past the terminal's visible bounds.
+        // Use labelColor so the text flips correctly between light/dark mode,
+        // and otherwise render as plain terminal text (no background, no underline).
+        //
+        // The terminal pixel-snaps each cell's width, so the effective per-cell
+        // advance is slightly wider than the font's natural advance. Apply a
+        // matching `.kern` so overlay characters line up with the terminal grid.
+        let glyphW = font.glyph(withName: "W")
+        let naturalAdvance = font.advancement(forGlyph: glyphW).width
+        let kern = max(0, cellDimension.width - naturalAdvance)
+
+        let display = NSMutableAttributedString(attributedString: markedTextStorage)
+        let fullRange = NSRange(location: 0, length: display.length)
+        display.addAttributes([
+            .font: font,
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: para,
+            .kern: kern,
+        ], range: fullRange)
+        overlay.textStorage?.setAttributedString(display)
+
+        // The overlay spans the full content width. Line 1 skips the portion
+        // already occupied by text to the left of the caret (e.g. the prompt)
+        // via an exclusion path; wrapped lines 2+ start from the left edge.
         let horizontalInset = max(CGFloat(4), contentInsets.left)
         let rightInset = max(CGFloat(4), contentInsets.right)
-        let maxWidth = max(cellDimension.width, bounds.width - horizontalInset - rightInset)
-        let overlayOriginX = min(
-            max(horizontalInset, caretView.frame.origin.x),
-            max(horizontalInset, bounds.maxX - rightInset - maxWidth)
-        )
-        let availableWidth = max(cellDimension.width, bounds.maxX - overlayOriginX - rightInset)
-        // NSTextField has small internal cell margins even with isBezeled = false.
-        // Measure at the effective rendering width so the height accounts for any
-        // word-wrapping the text field will actually perform.
-        let cellPadding: CGFloat = 4
-        let textBounds = displayString.boundingRect(
-            with: NSSize(width: max(cellDimension.width, availableWidth - cellPadding), height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).integral
-        let overlayHeight = ceil(textBounds.height)
-        let overlayWidth = ceil(max(cellDimension.width, min(availableWidth, textBounds.width + cellPadding)))
-        let overlayOriginY = caretView.frame.maxY - overlayHeight
+        let overlayX = horizontalInset
+        let overlayWidth = max(cellDimension.width, bounds.width - horizontalInset - rightInset)
+        let caretX = max(horizontalInset, caretView.frame.origin.x)
+        let exclusionWidth = max(0, caretX - overlayX)
 
-        overlay.frame = NSRect(
-            x: overlayOriginX,
-            y: overlayOriginY,
-            width: overlayWidth,
-            height: overlayHeight
-        )
+        if let container = overlay.textContainer {
+            container.containerSize = NSSize(width: overlayWidth, height: .greatestFiniteMagnitude)
+            container.exclusionPaths = exclusionWidth > 0
+                ? [NSBezierPath(rect: NSRect(x: 0, y: 0, width: exclusionWidth, height: lineHeight))]
+                : []
+        }
+
+        // Measure the laid-out text to size the overlay vertically.
+        let overlayHeight: CGFloat
+        if let container = overlay.textContainer, let layoutManager = overlay.layoutManager {
+            layoutManager.ensureLayout(for: container)
+            let used = layoutManager.usedRect(for: container)
+            overlayHeight = ceil(max(lineHeight, used.maxY))
+        } else {
+            overlayHeight = lineHeight
+        }
+
+        // Pin the overlay so its top edge sits on the caret row (non-flipped coords);
+        // wrapped lines extend downward from there.
+        let overlayY = caretView.frame.maxY - overlayHeight
+        overlay.frame = NSRect(x: overlayX, y: overlayY, width: overlayWidth, height: overlayHeight)
     }
 
     private func kittyEncoder() -> KittyKeyboardEncoder {
@@ -1837,19 +1857,19 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
 
     @objc open func performFindPanelAction(_ sender: Any?) {
-        guard let menuItem = sender as? NSMenuItem else {
+        guard let menuItem = sender as? NSMenuItem,
+              let finder = terminalTextFinder else {
             return
         }
         switch menuItem.tag {
         case Int(NSFindPanelAction.showFindPanel.rawValue):
-            showFindBar(prefillSelection: true)
+            showNativeFindBar(useSelection: false)
         case Int(NSFindPanelAction.next.rawValue):
-            performFind(next: true)
+            finder.performAction(.nextMatch)
         case Int(NSFindPanelAction.previous.rawValue):
-            performFind(next: false)
+            finder.performAction(.previousMatch)
         case Int(NSFindPanelAction.setFindString.rawValue):
-            setFindPasteboardFromSelection()
-            showFindBar(prefillSelection: true)
+            showNativeFindBar(useSelection: true)
         default:
             break
         }
@@ -1857,130 +1877,21 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
 
     open override func performTextFinderAction(_ sender: Any?) {
         guard let menuItem = sender as? NSMenuItem,
-              let action = NSTextFinder.Action(rawValue: menuItem.tag) else {
+              let action = NSTextFinder.Action(rawValue: menuItem.tag),
+              let finder = terminalTextFinder else {
             return
         }
-
         switch action {
-        case .nextMatch:
-            performFind(next: true)
-        case .previousMatch:
-            performFind(next: false)
-        case .setSearchString:
-            setFindPasteboardFromSelection()
-            showFindBar(prefillSelection: true)
         case .showFindInterface:
-            showFindBar(prefillSelection: true)
-        case .hideFindInterface:
-            hideFindBar()
+            showNativeFindBar(useSelection: false)
+        case .setSearchString:
+            showNativeFindBar(useSelection: true)
         default:
-            break
+            finder.performAction(action)
         }
     }
 
-    private func performFind(next: Bool) {
-        let termFromBar = (findBar?.isHidden == false) ? findBar?.searchText : nil
-        guard let term = termFromBar ?? findPasteboardString(), !term.isEmpty else {
-            return
-        }
-        updateFindPasteboard(term)
-        let options = findBar?.options ?? SearchOptions()
-        if next {
-            _ = findNext(term, options: options)
-        } else {
-            _ = findPrevious(term, options: options)
-        }
-    }
 
-    private func setFindPasteboardFromSelection() {
-        let selected = selection.getSelectedText()
-        guard !selected.isEmpty else {
-            return
-        }
-        let pasteboard = NSPasteboard(name: .find)
-        pasteboard.clearContents()
-        pasteboard.setString(selected, forType: .string)
-    }
-
-    private func findPasteboardString() -> String? {
-        let pasteboard = NSPasteboard(name: .find)
-        return pasteboard.string(forType: .string)
-    }
-
-    private func updateFindPasteboard(_ term: String) {
-        let pasteboard = NSPasteboard(name: .find)
-        pasteboard.clearContents()
-        pasteboard.setString(term, forType: .string)
-    }
-
-    private func ensureFindBar() -> TerminalFindBarView {
-        if let findBar {
-            return findBar
-        }
-        let bar = TerminalFindBarView()
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        bar.isHidden = true
-        bar.onSearchChanged = { [weak self] term in
-            self?.handleFindBarSearchChanged(term)
-        }
-        bar.onFindNext = { [weak self] in
-            self?.performFind(next: true)
-        }
-        bar.onFindPrevious = { [weak self] in
-            self?.performFind(next: false)
-        }
-        bar.onClose = { [weak self] in
-            self?.hideFindBar()
-        }
-        bar.onOptionsChanged = { [weak self] options in
-            self?.handleFindBarOptionsChanged(options)
-        }
-
-        addSubview(bar)
-        NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            bar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            bar.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
-            bar.widthAnchor.constraint(lessThanOrEqualToConstant: 520)
-        ])
-        findBar = bar
-        return bar
-    }
-
-    private func showFindBar(prefillSelection: Bool) {
-        let bar = ensureFindBar()
-        bar.isHidden = false
-        let selectedText = prefillSelection ? selection.getSelectedText() : nil
-        let initial = (selectedText?.isEmpty == false) ? selectedText : findPasteboardString()
-        if let initial {
-            bar.searchText = initial
-            handleFindBarSearchChanged(initial)
-        }
-        bar.focus()
-    }
-
-    private func hideFindBar() {
-        findBar?.isHidden = true
-        window?.makeFirstResponder(self)
-    }
-
-    private func handleFindBarSearchChanged(_ term: String) {
-        findBarTerm = term
-        if term.isEmpty {
-            clearSearch()
-            return
-        }
-        updateFindPasteboard(term)
-        _ = findNext(term, options: findBarOptions)
-    }
-
-    private func handleFindBarOptionsChanged(_ options: SearchOptions) {
-        findBarOptions = options
-        if !findBarTerm.isEmpty {
-            _ = findNext(findBarTerm, options: options)
-        }
-    }
-    
     open func selectionChanged(source: Terminal) {
         #if canImport(MetalKit)
         if metalView != nil {

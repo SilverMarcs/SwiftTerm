@@ -190,6 +190,9 @@ extension TerminalView {
             // These used to be outside
             accessibility.invalidate ()
             search.invalidate ()
+            #if os(macOS)
+            invalidateTextFinderString()
+            #endif
             
             terminalDelegate?.sizeChanged (source: self, newCols: newCols, newRows: newRows)
            
@@ -1957,6 +1960,9 @@ extension TerminalView {
     func feedPrepare()
     {
         search.invalidate()
+        #if os(macOS)
+        invalidateTextFinderString()
+        #endif
         // Only clear selection when the hosted app has actually requested mouse
         // reporting — otherwise the user should be able to select text while
         // output is streaming.
