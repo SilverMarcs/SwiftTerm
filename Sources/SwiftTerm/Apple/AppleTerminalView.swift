@@ -311,6 +311,16 @@ extension TerminalView {
         terminalDelegate?.hostCurrentDirectoryUpdate(source: self, directory: terminal.hostCurrentDirectory)
     }
 
+    public func semanticPromptCommandStarted (source: Terminal, command: String?)
+    {
+        terminalDelegate?.semanticPromptCommandStarted(source: self, command: command)
+    }
+
+    public func semanticPromptCommandFinished (source: Terminal, exitCode: Int32?)
+    {
+        terminalDelegate?.semanticPromptCommandFinished(source: self, exitCode: exitCode)
+    }
+
     
     /// Installs the new colors as the default colors and recomputes the
     /// current and ansi palette.   This installs both the colors into the terminal

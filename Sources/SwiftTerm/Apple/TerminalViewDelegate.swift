@@ -29,6 +29,27 @@ public protocol TerminalViewDelegate: AnyObject {
      * Invoked when the OSC command 7 for "current directory has changed" command is sent
      */
     func hostCurrentDirectoryUpdate (source: TerminalView, directory: String?)
+
+    /**
+     * Invoked when the shell reports that a foreground command has started, via
+     * the OSC 133;C (FinalTerm semantic prompt) sequence emitted by shell
+     * integration. The optional `command` is the command line as the shell
+     * saw it (or nil if the integration omits it). This is the authoritative
+     * signal for "the shell is busy running something" — far more reliable
+     * than scanning child processes or watching the window title.
+     *
+     * The default implementation does nothing.
+     */
+    func semanticPromptCommandStarted (source: TerminalView, command: String?)
+
+    /**
+     * Invoked when the shell reports that the foreground command has finished,
+     * via OSC 133;D. The optional `exitCode` reflects what the shell saw as
+     * `$?` at the time the precmd hook ran.
+     *
+     * The default implementation does nothing.
+     */
+    func semanticPromptCommandFinished (source: TerminalView, exitCode: Int32?)
     
     /**
      * Request that date be sent to the application running inside the terminal.

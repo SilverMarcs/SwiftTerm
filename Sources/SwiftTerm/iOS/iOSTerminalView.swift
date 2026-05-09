@@ -2718,6 +2718,12 @@ extension TerminalViewDelegate {
     
     public func iTermContent (source: TerminalView, content: ArraySlice<UInt8>) {
     }
+
+    public func semanticPromptCommandStarted (source: TerminalView, command: String?) {
+    }
+
+    public func semanticPromptCommandFinished (source: TerminalView, exitCode: Int32?) {
+    }
 }
 
 extension TerminalView: UIAccessibilityReadingContent {

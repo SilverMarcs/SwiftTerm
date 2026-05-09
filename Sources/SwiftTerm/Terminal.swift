@@ -144,7 +144,29 @@ public protocol TerminalDelegate: AnyObject {
      * The default implementaiton does nothing.
      */
     func hostCurrentDirectoryUpdated (source: Terminal)
-    
+
+    /**
+     * Invoked when the shell reports that a foreground command has just started,
+     * via the OSC 133;C (FinalTerm semantic prompt) sequence emitted by the
+     * shell-integration scripts (`preexec` in zsh, DEBUG trap in bash, the
+     * `fish_preexec` event in fish). The optional `command` is the command
+     * line as the shell saw it, or nil when the integration omits it. The
+     * value can also be read from `Terminal.foregroundCommand`.
+     *
+     * The default implementation does nothing.
+     */
+    func semanticPromptCommandStarted (source: Terminal, command: String?)
+
+    /**
+     * Invoked when the shell reports that the foreground command has finished,
+     * via OSC 133;D. The optional `exitCode` reflects what the shell saw as
+     * `$?` at the time the precmd hook ran. The value can also be read from
+     * `Terminal.lastExitCode`.
+     *
+     * The default implementation does nothing.
+     */
+    func semanticPromptCommandFinished (source: Terminal, exitCode: Int32?)
+
     /**
      * This method is invoked when the client application has issued a command to report
      * its current document (this is done with the OSC 6 command).   The value can be
@@ -452,6 +474,22 @@ open class Terminal {
     /// (see the `isProcessTrusted` method in the `TerminalDelegate`).  When this is set the
     /// `hostCurrentDocumentUpdated` method on the delegate is invoked.
     public private(set) var hostCurrentDocument: String? = nil
+
+    /// The name (or full command line) of the foreground command the shell is
+    /// currently running, as reported by the OSC 133 (FinalTerm semantic prompt)
+    /// integration. `nil` when the shell is at a prompt or no integration is
+    /// installed. The contents are entirely under the control of the remote
+    /// application and require the terminal to be trusted
+    /// (see `isProcessTrusted` on `TerminalDelegate`). When this changes,
+    /// `semanticPromptCommandStarted` / `semanticPromptCommandFinished` is
+    /// invoked on the delegate.
+    public private(set) var foregroundCommand: String? = nil
+
+    /// Exit status of the most recently completed foreground command, surfaced
+    /// by OSC 133;D. `nil` before the first command finishes, or when the
+    /// integration omits the exit code. Updated whenever
+    /// `semanticPromptCommandFinished` fires.
+    public private(set) var lastExitCode: Int32? = nil
     
     /// The current attribute used by the terminal by default
     public var currentAttribute: Attribute {
@@ -1733,6 +1771,50 @@ open class Terminal {
         }
     }
     
+    // Implements OSC 133 (FinalTerm semantic prompt). Payload is `verb` or
+    // `verb;arg`. Recognized verbs:
+    //   A — prompt-start (ignored)
+    //   B — prompt-end / command-start marker (ignored)
+    //   C[;<command>] — foreground command started; updates `foregroundCommand`
+    //                   and invokes `semanticPromptCommandStarted` on the delegate
+    //   D[;<exitCode>] — foreground command finished; clears `foregroundCommand`,
+    //                    updates `lastExitCode`, and invokes
+    //                    `semanticPromptCommandFinished` on the delegate
+    func oscSemanticPrompt (_ data: ArraySlice<UInt8>) {
+        if !(tdel?.isProcessTrusted(source: self) ?? false) {
+            return
+        }
+        guard let payload = String(bytes: data, encoding: .utf8) ?? String(bytes: data, encoding: .ascii) else {
+            return
+        }
+        let verb: Substring
+        let arg: Substring?
+        if let semi = payload.firstIndex(of: ";") {
+            verb = payload[..<semi]
+            arg = payload[payload.index(after: semi)...]
+        } else {
+            verb = Substring(payload)
+            arg = nil
+        }
+        switch verb {
+        case "C":
+            let trimmed = arg.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+            foregroundCommand = trimmed.isEmpty ? nil : trimmed
+            tdel?.semanticPromptCommandStarted(source: self, command: foregroundCommand)
+        case "D":
+            let exitText = arg.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+            let exit = exitText.isEmpty ? nil : Int32(exitText)
+            foregroundCommand = nil
+            lastExitCode = exit
+            tdel?.semanticPromptCommandFinished(source: self, exitCode: exit)
+        default:
+            // 133;A (prompt-start) and 133;B (prompt-end) are valid but ignored
+            // by this implementation. Add hooks here if a future feature
+            // (e.g. "scroll to last command") needs them.
+            break
+        }
+    }
+
     // Implements OSC 6 ; URL which records the current document
     func oscSetCurrentDocument (_ data: ArraySlice<UInt8>)
     {
@@ -6779,7 +6861,13 @@ public extension TerminalDelegate {
     
     func hostCurrentDirectoryUpdated (source: Terminal) {
     }
-    
+
+    func semanticPromptCommandStarted (source: Terminal, command: String?) {
+    }
+
+    func semanticPromptCommandFinished (source: Terminal, exitCode: Int32?) {
+    }
+
     func hostCurrentDocumentUpdated (source: Terminal) {
     }
     

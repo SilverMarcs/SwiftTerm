@@ -36,11 +36,41 @@ public protocol LocalProcessTerminalViewDelegate: AnyObject {
     func hostCurrentDirectoryUpdate (source: TerminalView, directory: String?)
 
     /**
+     * Invoked when the shell reports that a foreground command has started, via
+     * the OSC 133;C (FinalTerm semantic prompt) sequence emitted by shell
+     * integration.
+     * - Parameter source: the sending instance
+     * - Parameter command: the command line as the shell saw it, or nil if
+     *   the integration omits it
+     *
+     * The default implementation does nothing.
+     */
+    func semanticPromptCommandStarted (source: TerminalView, command: String?)
+
+    /**
+     * Invoked when the shell reports that the foreground command has finished,
+     * via OSC 133;D.
+     * - Parameter source: the sending instance
+     * - Parameter exitCode: what the shell saw as `$?` when the precmd hook
+     *   ran, or nil if the integration omits it
+     *
+     * The default implementation does nothing.
+     */
+    func semanticPromptCommandFinished (source: TerminalView, exitCode: Int32?)
+
+    /**
      * This method will be invoked when the child process started by `startProcess` has terminated.
      * - Parameter source: the local process that terminated
      * - Parameter exitCode: the exit code returned by the process, or nil if this was an error caused during the IO reading/writing
      */
     func processTerminated (source: TerminalView, exitCode: Int32?)
+}
+
+/// Default no-op implementations so existing conformers don't have to be
+/// updated to learn about OSC 133.
+public extension LocalProcessTerminalViewDelegate {
+    func semanticPromptCommandStarted (source: TerminalView, command: String?) {}
+    func semanticPromptCommandFinished (source: TerminalView, exitCode: Int32?) {}
 }
 
 /**
@@ -121,6 +151,14 @@ open class LocalProcessTerminalView: TerminalView, TerminalViewDelegate, LocalPr
 
     public func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
         processDelegate?.hostCurrentDirectoryUpdate(source: source, directory: directory)
+    }
+
+    public func semanticPromptCommandStarted(source: TerminalView, command: String?) {
+        processDelegate?.semanticPromptCommandStarted(source: source, command: command)
+    }
+
+    public func semanticPromptCommandFinished(source: TerminalView, exitCode: Int32?) {
+        processDelegate?.semanticPromptCommandFinished(source: source, exitCode: exitCode)
     }
     
 
