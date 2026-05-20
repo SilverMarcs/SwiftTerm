@@ -352,6 +352,7 @@ extension TerminalView {
             syncEndRenderTimer?.cancel()
             syncEndRenderTimer = nil
             inSyncSequence = true
+            syncSequenceGeneration &+= 1
         } else {
             // Sync block ended — defer render by syncSequenceSettleMs.
             //
@@ -363,13 +364,21 @@ extension TerminalView {
             // This coalescing delay lets the entire repaint sequence settle
             // before rendering one atomic frame. If a new BSU arrives within
             // the window, the render is cancelled and the window resets.
+            //
+            // The generation guard below handles the race where a new BSU
+            // arrives at the exact moment the previous timer's deadline passes:
+            // GCD cannot prevent an already-dequeued work item from running,
+            // so cancel() alone is insufficient. The generation is bumped on
+            // every BSU; a stale work item whose generation no longer matches
+            // skips the render and avoids clobbering inSyncSequence.
             syncEndRenderTimer?.cancel()
+            let generation = syncSequenceGeneration
             let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
+                guard let self, self.syncSequenceGeneration == generation else { return }
                 self.syncEndRenderTimer = nil
                 self.inSyncSequence = false
                 self.updateScroller()
-                self.queuePendingDisplay()
+                self.needsDisplay = true
                 self.terminalDelegate?.scrolled(source: self, position: self.scrollPosition)
             }
             syncEndRenderTimer = work

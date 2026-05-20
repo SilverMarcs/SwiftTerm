@@ -122,6 +122,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     var syncEndRenderTimer: DispatchWorkItem? = nil
     /// True from first BSU until syncSequenceSettleMs after last ESU.
     var inSyncSequence: Bool = false
+    /// Incremented on every BSU; lets queued settle-timer work items detect that
+    /// a new sync sequence started before they ran and bail out safely.
+    var syncSequenceGeneration: Int = 0
     /// Milliseconds to wait after the last ESU before rendering.
     /// Terminal multiplexers deliver screen repaints as multiple BSU/ESU
     /// pairs across separate I/O callbacks. This window lets the full

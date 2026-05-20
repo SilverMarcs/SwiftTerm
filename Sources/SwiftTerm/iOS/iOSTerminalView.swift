@@ -195,6 +195,9 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     var syncEndRenderTimer: DispatchWorkItem? = nil
     /// True from first BSU until syncSequenceSettleMs after last ESU.
     var inSyncSequence: Bool = false
+    /// Incremented on every BSU; lets queued settle-timer work items detect that
+    /// a new sync sequence started before they ran and bail out safely.
+    var syncSequenceGeneration: Int = 0
     /// Milliseconds to wait after the last ESU before rendering.
     var syncSequenceSettleMs: Int = 100
 #if canImport(MetalKit)
