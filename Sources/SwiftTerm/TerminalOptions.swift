@@ -64,7 +64,7 @@ public struct TerminalOptions {
     public var cursorStyle: CursorStyle
     /// Deprecated?   The new accessibility work will make this useless
     public var screenReaderMode: Bool
-    /// Size of the scrollback buffer, defaults to 2000 lines
+    /// Size of the scrollback buffer, defaults to 500 lines
     public var scrollback: Int
     /// Default size of the tabs, defaults to 8
     public var tabStopWidth: Int
@@ -85,7 +85,7 @@ public struct TerminalOptions {
                                                        termName: "xterm-256color",
                                                        cursorStyle: .blinkBlock,
                                                        screenReaderMode: false,
-                                                       scrollback: 2000,
+                                                       scrollback: 500,
                                                        tabStopWidth: 8,
                                                        enableSixelReported: true,
                                                        kittyImageCacheLimitBytes: 320 * 1024 * 1024,
