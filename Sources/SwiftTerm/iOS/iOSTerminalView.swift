@@ -191,7 +191,13 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     var search: SearchService!
     var debug: UIView?
     var pendingDisplay: Bool = false
-
+    /// Output received shortly after local input is likely echo or prompt redraw;
+    /// render it without the 16.67ms frame-rate throttle so typing feels responsive.
+    var lastUserInputUptimeNs: UInt64 = 0
+    /// Guards lastUserInputUptimeNs, which is written on the main thread and
+    /// read from the (possibly background) feed thread.
+    let userInputLock = NSLock()
+    let interactiveInputDisplayWindowNs: UInt64 = 150_000_000
 #if canImport(MetalKit)
     var metalView: MTKView?
     var metalRenderer: MetalTerminalRenderer?
@@ -1209,6 +1215,16 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         setupOptions(width: bounds.width, height: bounds.height)
         layer.backgroundColor = nativeBackgroundColor.cgColor
         nativeBackgroundColor = UIColor.clear
+        // The terminal background is provided by `layer.backgroundColor`, and
+        // `draw(_:)` paints glyph cells with a transparent backdrop so that the
+        // layer colour shows through the gaps. That only works if the view is
+        // non-opaque: an opaque view gets an alpha-less graphics context where
+        // the transparent fill is a no-op, leaving uninitialised backing-store
+        // garbage in every default-background region. When the scroll view blits
+        // and re-exposes strips during scrolling, that garbage becomes visible as
+        // flickering/striped corruption. Marking the view non-opaque makes the
+        // transparent compositing behave as intended.
+        isOpaque = false
     }
     
     var _nativeFg, _nativeBg: TTColor!
@@ -1332,6 +1348,23 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     /// system (where `selectNone` would otherwise come from).
     public func clearSelection() {
         selection?.selectNone()
+    }
+
+    /// Programmatically presents SwiftTerm's standard Copy / Paste /
+    /// Select All context menu at the given point in the terminal's
+    /// coordinate space. Mirrors the path the built-in long-press
+    /// gesture takes — becomes first responder, computes the menu
+    /// region around the tap point, then calls the existing internal
+    /// `showContextMenu(forRegion:pos:)` presenter.
+    ///
+    /// Useful when a host app replaces the built-in long-press gesture
+    /// with custom behaviour (e.g. a cursor-drag mode) but still wants
+    /// the existing menu as a fallback for release-without-movement.
+    public func showStandardContextMenu(at point: CGPoint) {
+        _ = becomeFirstResponder()
+        let region = makeContextMenuRegionForTap(point: point)
+        let hit = calculateTapHit(point: point)
+        showContextMenu(forRegion: region, pos: hit.grid)
     }
 
     var lineAscent: CGFloat = 0
@@ -2195,7 +2228,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         terminal.userScrolling = false
     }
     
-    public func deleteBackward() {
+    open func deleteBackward() {
         uitiLog("deleteBackward() \(textInputStateDescription())")
 
         // after backward deletion, marked range is always cleared, and length of selected range is always zero

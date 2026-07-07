@@ -1,15 +1,18 @@
-/// No-op debug logger for DEC 2026 synchronized output.
-///
-/// Upstream's ``Terminal`` and ``TerminalView`` sprinkle `SyncDebug.log`
-/// calls through the sync-output path. The type is not shipped in the
-/// upstream repository (it lives in Miguel's local harness), so we provide
-/// a stub that compiles away to nothing in release builds.
+import Foundation
+
+/// Opt-in trace for synchronized-output (DEC 2026) flow and display scheduling.
+/// Set `SyncDebug.enabled = true` from the host app to see events on stderr.
 enum SyncDebug {
+    public static let enabled = false
+    private static let start = DispatchTime.now().uptimeNanoseconds
+
     @inline(__always)
-    static func log(_ message: @autoclosure () -> String) {
-        #if DEBUG
-        // Uncomment the line below to see sync output timing in the console:
-        // print("[SyncDebug] \(message())")
-        #endif
+    @inlinable
+    static func log(_ event: @autoclosure () -> String) {
+        guard enabled else { return }
+        let now = DispatchTime.now().uptimeNanoseconds
+        let ms = Double(now &- start) / 1_000_000
+        let line = String(format: "[sync %9.2fms] %@\n", ms, event())
+        FileHandle.standardError.write(Data(line.utf8))
     }
 }

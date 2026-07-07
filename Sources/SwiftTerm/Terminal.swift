@@ -2606,6 +2606,11 @@ open class Terminal {
         }
         // this.maxRange();
         updateRange (startLine: buffer.y, endLine: buffer.scrollBottom)
+        // A restricted region leaves stale pixels / a bottom-edge ghost outside
+        // [y, scrollBottom] on the CG renderer (as in scroll()); the range above
+        // already covers full-screen, so widen to the whole viewport only when the
+        // region is restricted.
+        refreshScrolledRegion(top: buffer.scrollTop, bottom: buffer.scrollBottom, canBlit: true)
     }
     
     //
@@ -4248,17 +4253,18 @@ open class Terminal {
             case 1004: // send focusin/focusout events
                 sendFocus = false
             case 1005: // utf8 ext mode mouse
+                // Resets the coordinate encoding only: 1005/1006/1015/1016 select how mouse
+                // events are encoded, independent of the tracking modes (9/1000-1003). xterm
+                // keeps tracking enabled when an encoding is reset; turning mouseMode off here
+                // broke clients (e.g. mosh re-asserts modes as "CSI ?1003l ?1003h ?1006l ?1006h"
+                // on every resize, which left tracking permanently disabled).
                 mouseProtocol = .x10
-                mouseMode = .off
             case 1006: // sgr ext mode mouse
                 mouseProtocol = .x10
-                mouseMode = .off
             case 1015: // urxvt ext mode mouse
                 mouseProtocol = .x10
-                mouseMode = .off
             case 1016: // sgrPixel mode
                 mouseProtocol = .x10
-                mouseMode = .off
             case 25: // hide cursor
                 hideCursor ()
             case 1048: // alt screen cursor
@@ -4832,7 +4838,7 @@ open class Terminal {
             }
         }
         // this.maxRange();
-        updateRange (startLine: buffer.scrollTop, endLine: buffer.scrollBottom)
+        refreshScrolledRegion(top: buffer.scrollTop, bottom: buffer.scrollBottom, canBlit: false)
     }
 
     //
@@ -4868,7 +4874,7 @@ open class Terminal {
             }
         }
         // this.maxRange();
-        updateRange (startLine: buffer.scrollTop, endLine: buffer.scrollBottom)
+        refreshScrolledRegion(top: buffer.scrollTop, bottom: buffer.scrollBottom, canBlit: false)
     }
 
     //
@@ -4945,6 +4951,11 @@ open class Terminal {
         
         // this.maxRange();
         updateRange (startLine: buffer.y, endLine: buffer.scrollBottom)
+        // A restricted region leaves stale pixels / a bottom-edge ghost outside
+        // [y, scrollBottom] on the CG renderer (as in scroll()); the range above
+        // already covers full-screen, so widen to the whole viewport only when the
+        // region is restricted.
+        refreshScrolledRegion(top: buffer.scrollTop, bottom: buffer.scrollBottom, canBlit: true)
     }
 
     //
@@ -5342,6 +5353,16 @@ open class Terminal {
     
     var blankLine: BufferLine = BufferLine(cols: 0)
     
+    /// Flag the scrolled region dirty. The CoreGraphics renderer now clears any
+    /// dirtied region before painting (see AppleTerminalView), so flagging just
+    /// [top, bottom] fixes the stale rows / bottom ghost — no whole-viewport repaint
+    /// needed. Full-screen + scrollback (`canBlit`) keeps the cheap path.
+    private func refreshScrolledRegion(top: Int, bottom: Int, canBlit: Bool) {
+        if top != 0 || bottom != rows - 1 || !canBlit {
+            updateRange(startLine: top, endLine: bottom)
+        }
+    }
+
     public func scroll (isWrapped: Bool = false)
     {
         let buffer = self.buffer
@@ -5474,9 +5495,7 @@ open class Terminal {
         updateRange (scrollTop, scrolling: true)
         updateRange (scrollBottom, scrolling: true)
 
-        if !hasScrollback {
-            updateRange(startLine: scrollTop, endLine: scrollBottom)
-        }
+        refreshScrolledRegion(top: scrollTop, bottom: scrollBottom, canBlit: hasScrollback)
 
         if buffer.hasAnyImages {
             updateKittyRelativePlacementsForCurrentBuffer()
@@ -5638,7 +5657,6 @@ open class Terminal {
     private func beginSynchronizedOutput ()
     {
         let wasActive = synchronizedOutputActive
-        SyncDebug.log("BSU wasActive=\(wasActive)")
         synchronizedOutputActive = true
         scheduleSynchronizedOutputTimeout()
         if !wasActive {
@@ -5649,10 +5667,8 @@ open class Terminal {
     private func endSynchronizedOutput ()
     {
         guard synchronizedOutputActive else {
-            SyncDebug.log("ESU ignored (not active)")
             return
         }
-        SyncDebug.log("ESU")
         synchronizedOutputActive = false
         synchronizedOutputTimeoutItem?.cancel()
         synchronizedOutputTimeoutItem = nil
@@ -5667,7 +5683,6 @@ open class Terminal {
             guard let self, self.synchronizedOutputActive else {
                 return
             }
-            SyncDebug.log("safety-timer-fired (missing ESU)")
             self.endSynchronizedOutput()
         }
         synchronizedOutputTimeoutItem = workItem
@@ -5915,7 +5930,7 @@ open class Terminal {
                     }
                     buffer.lines [topRow] = buffer.getBlankLine (attribute: eraseAttr ())
                 }
-                updateRange (startLine: buffer.scrollTop, endLine: buffer.scrollBottom)
+                refreshScrolledRegion(top: buffer.scrollTop, bottom: buffer.scrollBottom, canBlit: false)
             }
         } else if buffer.y > 0 {
             buffer.y -= 1
