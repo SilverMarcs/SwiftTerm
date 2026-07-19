@@ -364,6 +364,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         // so this is the colorspace they actually live in.
         if let metalLayer = mtkView.layer as? CAMetalLayer {
             metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+            metalLayer.isOpaque = !usesWindowBackground
         }
         return mtkView
     }
@@ -473,6 +474,18 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         if currentWindow !== metalBoundWindow {
             rebindMetalRendererToWindow(currentWindow)
         }
+    }
+
+    /// The Metal renderer bakes resolved dynamic colors into cached row
+    /// buffers (the cache is keyed on the effective appearance, so a theme
+    /// switch invalidates them) — but nothing else guarantees a redraw of the
+    /// MTKView when the appearance flips, so request one here. The
+    /// CoreGraphics path needs nothing: AppKit redraws it and dynamic colors
+    /// re-resolve at draw time.
+    open override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        guard useMetalRenderer, metalView != nil else { return }
+        requestMetalDisplay()
     }
 #endif
     
@@ -743,6 +756,10 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         self.nativeBackgroundColor = NSColor.windowBackgroundColor
         usesWindowBackground = true
         layer?.backgroundColor = nil
+        layer?.isOpaque = false
+        if let metalLayer = metalView?.layer as? CAMetalLayer {
+            metalLayer.isOpaque = false
+        }
     }
     
     open func bufferActivated(source: Terminal) {

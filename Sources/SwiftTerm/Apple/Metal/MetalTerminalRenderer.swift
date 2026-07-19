@@ -174,6 +174,12 @@ struct CacheSignature: Hashable {
     let fontSize: Double
     let isAltBuffer: Bool
     let kittyStamp: KittyCacheStamp
+    /// Dynamic NSColors (labelColor, windowBackgroundColor) are baked into the
+    /// cached row buffers as resolved SIMD values, so rows cached under one
+    /// appearance render stale colors after a light/dark switch — unlike the
+    /// CoreGraphics path, which re-resolves at draw time. Keying the cache on
+    /// the effective appearance drops those rows.
+    let appearanceName: String
 }
 
 final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
@@ -391,7 +397,12 @@ final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
             debugLastLogTime = now
         }
 #endif
-        let bgColor = colorToSIMD(terminalView.nativeBackgroundColor)
+        var bgColor = colorToSIMD(terminalView.nativeBackgroundColor)
+#if os(macOS)
+        if terminalView.usesWindowBackground {
+            bgColor = SIMD4<Float>(0, 0, 0, 0)
+        }
+#endif
         passDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(Double(bgColor.x),
                                                                          Double(bgColor.y),
                                                                          Double(bgColor.z),
@@ -602,6 +613,11 @@ final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
                                          placementsCount: kittyState.placementsByKey.count,
                                          nextImageId: kittyState.nextImageId,
                                          nextPlacementId: kittyState.nextPlacementId)
+#if os(macOS)
+        let appearanceName = terminalView.effectiveAppearance.name.rawValue
+#else
+        let appearanceName = ""
+#endif
         let signature = CacheSignature(scale: Double(scale),
                                        cellWidth: Double(cellWidth),
                                        cellHeight: Double(cellHeight),
@@ -613,7 +629,8 @@ final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
                                        fontName: terminalView.fontSet.normal.fontName,
                                        fontSize: Double(terminalView.fontSet.normal.pointSize),
                                        isAltBuffer: terminalView.terminal.isCurrentBufferAlternate,
-                                       kittyStamp: kittyStamp)
+                                       kittyStamp: kittyStamp,
+                                       appearanceName: appearanceName)
         let signatureChanged = signature != cacheSignature
         if signatureChanged {
             rowCache.removeAll()
