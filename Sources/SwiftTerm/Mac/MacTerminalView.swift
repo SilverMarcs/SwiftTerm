@@ -2433,15 +2433,36 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         return calculateMouseHit(at: point).grid
     }
     
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        #if canImport(MetalKit)
+        if hit == metalView {
+            return self
+        }
+        #endif
+        return hit
+    }
+    
+    private var lastHoverGridPosition: Position?
+    private var lastHoverCommandActive: Bool = false
+    
     public override func mouseMoved(with event: NSEvent) {
         let hit = calculateMouseHit(with: event)
-        if commandActive {
-            if let payload = getPayload(for: event) as? String {
-                previewUrl (payload: payload)
+        let gridPosChanged = lastHoverGridPosition != hit.grid
+        let commandActiveChanged = lastHoverCommandActive != commandActive
+        
+        if gridPosChanged || commandActiveChanged {
+            lastHoverGridPosition = hit.grid
+            lastHoverCommandActive = commandActive
+            
+            if commandActive {
+                if let payload = getPayload(for: event) as? String {
+                    previewUrl (payload: payload)
+                }
+                reportLink(at: hit.grid)
             }
-            reportLink(at: hit.grid)
+            updateHoverLink(at: hit.grid)
         }
-        updateHoverLink(at: hit.grid)
         
         if terminal.mouseMode.sendMotionEvent() {
             let flags = encodeMouseEvent(with: event, overwriteRelease: true)
