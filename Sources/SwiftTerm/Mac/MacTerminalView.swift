@@ -752,7 +752,14 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     /// to match macOS default colors for text and its background.
     public func configureNativeColors ()
     {
-        self.nativeForegroundColor = NSColor.labelColor
+        self.nativeForegroundColor = NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua {
+                // Return a slightly dimmer (softer) white for dark mode instead of pure white
+                return NSColor(white: 0.90, alpha: 1.0)
+            } else {
+                return NSColor.labelColor
+            }
+        }
         self.nativeBackgroundColor = NSColor.windowBackgroundColor
         usesWindowBackground = true
         layer?.backgroundColor = nil

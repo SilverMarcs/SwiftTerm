@@ -310,12 +310,27 @@ final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+#if os(macOS)
+        if let tv = terminalView {
+            tv.effectiveAppearance.performAsCurrentDrawingAppearance {
+                _draw(in: view)
+            }
+        } else {
+            _draw(in: view)
+        }
+#else
+        _draw(in: view)
+#endif
+    }
+    
+    private func _draw(in view: MTKView) {
 #if canImport(os)
         let drawID = OSSignpostID(log: MetalTerminalRenderer.profileLog)
         if MetalTerminalRenderer.profileEnabled {
             os_signpost(.begin, log: MetalTerminalRenderer.profileLog, name: "Metal.Draw", signpostID: drawID)
         }
         defer {
+
             if MetalTerminalRenderer.profileEnabled {
                 os_signpost(.end, log: MetalTerminalRenderer.profileLog, name: "Metal.Draw", signpostID: drawID)
             }
