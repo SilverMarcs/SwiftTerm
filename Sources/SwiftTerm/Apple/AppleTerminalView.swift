@@ -1770,7 +1770,10 @@ extension TerminalView {
             // time, and MTKView is paused — without an explicit redraw the
             // cursor stays at its old screen position until something else
             // dirties a row. Trigger a redraw if the cursor moved.
-            #if canImport(MetalKit)
+            // Not on macOS: the caret there is an AppKit overlay that
+            // updateCursorPosition() above already moved, so a full-frame
+            // Metal render for a cursor-only move is pure battery waste.
+            #if canImport(MetalKit) && !os(macOS)
             if metalView != nil {
                 let buffer = terminal.displayBuffer
                 let cursor = (x: buffer.x, y: buffer.yBase + buffer.y, hidden: terminal.cursorHidden)

@@ -330,10 +330,6 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             metalView = nil
             metalRenderer = nil
             metalBoundWindow = nil
-            if let caretView = caretView {
-                caretView.isHidden = false
-                caretView.updateCursorStyle()
-            }
             needsDisplay = true
         }
     }
@@ -370,8 +366,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
 
     /// Inserts the Metal view into the view hierarchy with the correct
-    /// z-order: below the caret (which is hidden while Metal owns the
-    /// cursor), with the scroller above it. When there is no caret view
+    /// z-order: below the caret, with the scroller above it. The caret stays
+    /// visible and owns the cursor — its blink is a render-server CAAnimation
+    /// on the caret layer, so the Metal surface can stay static while the
+    /// cursor blinks. (Letting the renderer draw the cursor instead required
+    /// a repeating timer doing full-frame redraws, which macOS flagged as
+    /// significant battery drain, 2026-07.) When there is no caret view
     /// and `replacing` is non-nil, the new view takes the old one's
     /// z-position instead. Actually removing the old view is the caller's
     /// responsibility — the rebind path defers removal until after the new
@@ -379,8 +379,6 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     private func insertMetalView(_ newView: MTKView, replacing oldView: MTKView?) {
         if let caretView = caretView {
             addSubview(newView, positioned: .below, relativeTo: caretView)
-            caretView.disableAnimations()
-            caretView.isHidden = true
         } else if let oldView = oldView {
             addSubview(newView, positioned: .above, relativeTo: oldView)
         } else {
@@ -459,10 +457,6 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         metalRenderer = nil
         metalBoundWindow = nil
         useMetalRenderer = false
-        if let caretView = caretView {
-            caretView.isHidden = false
-            caretView.updateCursorStyle()
-        }
         needsDisplay = true
     }
 #endif
@@ -948,7 +942,6 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         let response = super.becomeFirstResponder()
         if response {
             hasFocus = true
-            caretView.updateCursorStyle()
             terminal.setTerminalFocus(true)
         }
         return response
@@ -957,7 +950,6 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     public override func resignFirstResponder() -> Bool {
         let response = super.resignFirstResponder()
         if response {
-            caretView.disableAnimations()
             hasFocus = false
             terminal.setTerminalFocus(false)
         }
@@ -2575,29 +2567,18 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
     
     open func showCursor(source: Terminal) {
-        if useMetalRenderer {
-            queueMetalDisplay()
-            return
-        }
         if caretView.superview == nil {
             addSubview(caretView)
         }
     }
 
     open func hideCursor(source: Terminal) {
-        if useMetalRenderer {
-            queueMetalDisplay()
-            return
-        }
         caretView.removeFromSuperview()
     }
-    
+
     open func cursorStyleChanged (source: Terminal, newStyle: CursorStyle) {
         caretView.style = newStyle
         updateCaretView()
-        if useMetalRenderer {
-            queueMetalDisplay()
-        }
     }
 
     /// Callback invoked when the terminal bell fires (e.g. `\a`).

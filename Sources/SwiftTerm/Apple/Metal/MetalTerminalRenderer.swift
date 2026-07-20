@@ -354,9 +354,11 @@ final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
         let scale = terminalView.backingScaleFactor()
 #endif
         view.drawableSize = CGSize(width: view.bounds.width * scale, height: view.bounds.height * scale)
+#if !os(macOS)
         let cursorStyle = terminalView.terminal.options.cursorStyle
         let shouldBlink = isBlinkStyle(cursorStyle) && !terminalView.terminal.cursorHidden
         updateCursorBlinkTimer(shouldBlink: shouldBlink)
+#endif
 
 #if canImport(os)
         let drawableID = OSSignpostID(log: MetalTerminalRenderer.profileLog)
@@ -779,6 +781,17 @@ final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
         debugRowsCached = cachedRows
 #endif
 
+#if os(macOS)
+        // The renderer must not draw the cursor on macOS: CaretView (an AppKit
+        // layer above the MTKView) owns it, blinking via a render-server
+        // CAAnimation that costs no app CPU. Blinking from here required a
+        // repeating 0.7s timer doing a full-frame redraw per pane around the
+        // clock — flagged by the macOS battery panel as significant energy
+        // use (2026-07).
+        let cursorData: (colorVertices: [ColorVertex],
+                         glyphVerticesGray: [GlyphVertex],
+                         glyphVerticesColor: [GlyphVertex]) = ([], [], [])
+#else
         let cursorData = buildCursorDrawData(scale: scale,
                                              cellWidth: cellWidth,
                                              cellHeight: cellHeight,
@@ -787,6 +800,7 @@ final class MetalTerminalRenderer: NSObject, MTKViewDelegate {
                                              yDisp: visibleDisp,
                                              firstRow: firstRow,
                                              lastRow: lastRow)
+#endif
 
         let result = DrawData(rows: rows,
                               frame: frameData,

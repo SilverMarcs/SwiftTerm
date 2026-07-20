@@ -77,7 +77,11 @@ class CaretView: NSView, CALayerDelegate {
     func updateAnimation (to: Bool) {
         layer?.removeAllAnimations()
         self.layer?.opacity = 1
-        if to {
+        // Only the focused caret blinks: unfocused panes draw a steady hollow
+        // outline. Besides matching platform convention, this keeps the
+        // WindowServer from compositing an infinite opacity animation for
+        // every open pane.
+        if to && (!tracksFocus || focused) {
             let anim = CABasicAnimation.init(keyPath: #keyPath (CALayer.opacity))
             anim.duration = 0.7
             anim.autoreverses = true
@@ -112,7 +116,7 @@ class CaretView: NSView, CALayerDelegate {
 
     public var focused: Bool = false {
         didSet {
-            updateView()
+            updateCursorStyle()
         }
     }
 
