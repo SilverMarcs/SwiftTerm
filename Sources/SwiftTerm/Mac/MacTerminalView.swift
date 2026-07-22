@@ -2232,6 +2232,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
 
     open override func mouseDown(with event: NSEvent) {
+        makeFirstResponder()
+        
         if allowMouseReporting && !shiftBypassesMouseReporting(for: event) && terminal.mouseMode.sendButtonPress() {
             sharedMouseEvent(with: event)
             return
