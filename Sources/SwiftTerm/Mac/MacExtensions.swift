@@ -5,6 +5,7 @@
 //  Created by Miguel de Icaza on 6/29/21.
 //
 
+#if !SWIFTTERM_EMBEDDED
 #if os(macOS)
 import Foundation
 import AppKit
@@ -19,7 +20,12 @@ extension NSColor {
 
         var red: CGFloat = 0.0, green: CGFloat = 0.0, blue: CGFloat = 0.0, alpha: CGFloat = 1.0
         color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return Color(red: UInt16(red*65535), green: UInt16(green*65535), blue: UInt16(blue*65535))
+        // Clamp: extended-sRGB conversions can produce components outside 0...1,
+        // and the UInt16 conversion would trap on them
+        func clamp (_ v: CGFloat) -> CGFloat {
+            return min (max (v, 0.0), 1.0)
+        }
+        return Color(red: UInt16(clamp(red)*65535), green: UInt16(clamp(green)*65535), blue: UInt16(clamp(blue)*65535))
     }
     func inverseColor() -> NSColor {
         guard let color = self.usingColorSpace(.sRGB) else {
@@ -108,3 +114,5 @@ extension NSAttributedString {
     }
 }
 #endif
+
+#endif // !SWIFTTERM_EMBEDDED

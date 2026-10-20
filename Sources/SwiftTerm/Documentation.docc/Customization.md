@@ -40,14 +40,13 @@ terminalView.nativeBackgroundColor = NSColor.black    // or UIColor.black
 
 ### ANSI Palette
 
-To install a custom 256-color palette, use ``Terminal/installPalette(colors:)``.
-The array must contain exactly 256 ``Color`` values — the first 16 are the
-standard ANSI colors, 16-231 are the 6x6x6 color cube, and 232-255 are the
-greyscale ramp:
+To install custom base ANSI colors on a view, use
+``TerminalView/installColors(_:)``.
+The array must contain exactly 16 ``Color`` values. SwiftTerm derives entries
+16 through 255 from these colors and the selected ANSI 256 strategy:
 
 ```swift
-let terminal = terminalView.getTerminal()
-terminal.installPalette(colors: myCustomPalette)
+terminalView.installColors(myCustomPalette)
 ```
 
 ### Selection and Cursor Colors
@@ -56,6 +55,16 @@ terminal.installPalette(colors: myCustomPalette)
 terminalView.selectedTextBackgroundColor = NSColor.systemBlue.withAlphaComponent(0.3)
 terminalView.caretColor = NSColor.systemGreen
 terminalView.caretTextColor = NSColor.black  // optional: text color under cursor
+```
+
+### Progress Bar Color
+
+The OSC 9;4 progress bar follows the system accent color unless the host picks
+one, which keeps it in step with a themed terminal. The error and paused states
+keep their system red and orange either way:
+
+```swift
+terminalView.progressBarColor = NSColor.systemPurple  // nil restores the accent color
 ```
 
 ## Cursor Style
@@ -84,8 +93,20 @@ essential for terminal applications like Emacs that rely on the Meta key:
 terminalView.optionAsMetaKey = true
 ```
 
-On iOS with an external keyboard, the same property is available. The iOS view
-also supports toggling it at runtime with Option-Command-O.
+With it `false`, the key goes to the OS, which composes whatever the keyboard
+layout puts behind it (Option+Q is `@` on a Turkish layout). The layout composes
+nothing for the arrows, Home, End, the function keys, Enter, Tab and Backspace,
+so `optionAsMetaKeyForFunctionalKeys` keeps Option as Meta on those keys alone:
+Option+Left still moves a word back while Option+Q still types `@`, which is
+what iTerm2 does when its Option key is set to "Normal":
+
+```swift
+terminalView.optionAsMetaKey = false
+terminalView.optionAsMetaKeyForFunctionalKeys = true
+```
+
+On iOS with an external keyboard, `optionAsMetaKey` is available too. The iOS
+view also supports toggling it at runtime with Option-Command-O.
 
 ### Mouse Reporting
 
@@ -177,6 +198,22 @@ let options = TerminalOptions(
 )
 ```
 
+BiDi left/right arrow swapping requires opt-in. Set its initial value when you
+create the terminal, or change the live terminal state later:
+
+```swift
+let options = TerminalOptions(initialBidiArrowKeySwap: true)
+let terminal = Terminal(delegate: delegate, options: options)
+
+terminal.bidiArrowKeySwap = false
+```
+
+A terminal reset restores `initialBidiArrowKeySwap`. Terminal applications can
+also change the live state with DEC private mode 1243.
+
+For the full bidirectional text support — presentation modes, escape
+sequences, and the rendering pipeline — see <doc:BiDi>.
+
 Key options:
 
 | Property | Default | Description |
@@ -188,7 +225,10 @@ Key options:
 | `cursorStyle` | `.blinkBlock` | Initial cursor appearance |
 | `screenReaderMode` | `false` | Accessibility mode |
 | `enableSixelReported` | `true` | Advertise Sixel support to applications |
-| `kittyImageCacheLimitBytes` | 320 MB | Memory limit for Kitty image cache |
+| `initialBidiState` | implicit, autodetect, LTR | BiDi state for new paragraphs after startup or reset |
+| `maximumBidiParagraphRows` | `120` | Maximum rows processed as one BiDi paragraph |
+| `initialBidiArrowKeySwap` | `false` | Initial state for BiDi left/right arrow swapping |
+| `kittyGraphics` | 10 MB per screen, direct media only | Kitty storage and local-media policy |
 | `ansi256PaletteStrategy` | `.base16Lab` | 256-color palette generation strategy |
 
 The `.base16Lab` and `.base16LabHarmonious` strategies are based on the
@@ -211,6 +251,11 @@ terminalView.antiAliasCustomBlockGlyphs = true
 
 // Use bright colors for bold text (traditional terminal behavior)
 terminalView.useBrightColors = true
+
+// Darken or lighten text that falls below a WCAG contrast ratio against
+// its background, such as colors a program picked for a dark theme shown
+// on a light one. 1, the default, keeps every color as it is.
+terminalView.minimumContrastRatio = 4.5
 ```
 
 ### GPU-Accelerated Rendering
@@ -258,3 +303,23 @@ custom overlay), set `notifyUpdateChanges` to `true` and implement
 ```swift
 terminalView.notifyUpdateChanges = true
 ```
+
+## Progress Bar Timeout
+
+The OSC 9;4 progress bar clears itself after 15 seconds without a report, so a
+program that dies mid-task does not leave a bar behind. That safety net assumes
+reports keep arriving while the work runs: a program that reports once at the
+start and once at the end of a long task looks silent in between and loses its
+bar halfway through.
+
+``TerminalView/progressReportTimeout`` sets that wait, and `nil` turns it off
+for a host that trusts its program to close every bar it opens:
+
+```swift
+terminalView.progressReportTimeout = 60   // wait a minute instead
+terminalView.progressReportTimeout = nil  // keep the bar until the program removes it
+```
+
+Changing it while a bar is on screen restarts the wait from that moment, and
+`nil` cancels a wait already running. The default is
+``TerminalView/defaultProgressReportTimeout``.

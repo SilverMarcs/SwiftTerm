@@ -1,15 +1,15 @@
 //
 //  KittyGraphicsLifecycleTests.swift
 //
-#if os(macOS)
 import Foundation
 import Testing
 
 @testable import SwiftTerm
 
+#if os(macOS) || os(Linux)
 final class KittyGraphicsLifecycleTests {
     private func makeHeadlessTerminal() -> HeadlessTerminal {
-        HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
+        HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
     }
 
     private func sendKitty(terminal: Terminal, control: String, payload: [UInt8]) {
@@ -23,7 +23,7 @@ final class KittyGraphicsLifecycleTests {
         let t = h.terminal!
 
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -44,7 +44,7 @@ final class KittyGraphicsLifecycleTests {
         #expect(t.isCurrentBufferAlternate)
 
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -53,8 +53,8 @@ final class KittyGraphicsLifecycleTests {
         t.feed(text: "\u{1b}[?47l")
         #expect(!t.isCurrentBufferAlternate)
 
-        #expect(t.kittyGraphicsState.imagesById[1] != nil)
-        #expect(!t.kittyGraphicsState.placementsByKey.isEmpty)
+        #expect(t.kittyGraphicsState.imagesById.isEmpty)
+        #expect(t.kittyGraphicsState.placementsByKey.isEmpty)
 
         t.feed(text: "\u{1b}[?1049h")
         #expect(t.isCurrentBufferAlternate)
@@ -74,7 +74,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Create image with placement
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -88,6 +88,22 @@ final class KittyGraphicsLifecycleTests {
         #expect(t.kittyGraphicsState.placementsByKey.isEmpty)
     }
 
+    @Test func testDeleteVisibleDoesNotSelectVirtualPlacement() {
+        let h = makeHeadlessTerminal()
+        let t = h.terminal!
+
+        sendKitty(terminal: t,
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  payload: [1, 2, 3])
+        t.clearUpdateRange()
+
+        t.feed(text: "\u{1b}_Gq=2,a=d,d=A\u{1b}\\")
+
+        #expect(!t.kittyGraphicsState.placementsByKey.isEmpty)
+        #expect(t.kittyGraphicsState.imagesById[1] != nil)
+        #expect(t.getUpdateRange() == nil)
+    }
+
     /// Test delete visible placements AND cleanup unreferenced images (d=A uppercase)
     /// From Ghostty: "storage: delete all placements and images"
     @Test func testDeleteVisiblePlacementsAndCleanupImages() {
@@ -96,7 +112,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Create image with placement
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -117,10 +133,10 @@ final class KittyGraphicsLifecycleTests {
 
         // Create two images
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2",
                   payload: [4, 5, 6])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -142,10 +158,10 @@ final class KittyGraphicsLifecycleTests {
 
         // Create two images
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2",
                   payload: [4, 5, 6])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -168,7 +184,7 @@ final class KittyGraphicsLifecycleTests {
         // Place cursor at position and create image there
         t.feed(text: "\u{1b}[1;1H")
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,C=1",
                   payload: [1, 2, 3])
 
         #expect(!t.kittyGraphicsState.placementsByKey.isEmpty)
@@ -187,7 +203,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Create image at column 1
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(!t.kittyGraphicsState.placementsByKey.isEmpty)
@@ -206,7 +222,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Create image at row 1
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(!t.kittyGraphicsState.placementsByKey.isEmpty)
@@ -225,7 +241,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Create image
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(!t.kittyGraphicsState.placementsByKey.isEmpty)
@@ -244,7 +260,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Create image with z-index
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1,z=5",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,z=5",
                   payload: [1, 2, 3])
 
         #expect(!t.kittyGraphicsState.placementsByKey.isEmpty)
@@ -263,13 +279,13 @@ final class KittyGraphicsLifecycleTests {
 
         // Create three images with IDs 1, 2, 3
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2",
                   payload: [4, 5, 6])
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=3,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=3",
                   payload: [7, 8, 9])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -293,13 +309,13 @@ final class KittyGraphicsLifecycleTests {
 
         // Create three images with IDs 1, 2, 3
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=2",
                   payload: [4, 5, 6])
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=3,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=3",
                   payload: [7, 8, 9])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -344,7 +360,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Send with q=1 (quiet mode)
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1,q=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,q=1",
                   payload: [1, 2, 3])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -359,7 +375,7 @@ final class KittyGraphicsLifecycleTests {
 
         // Create an image first
         sendKitty(terminal: t,
-                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1,U=1",
+                  control: "a=T,f=24,s=1,v=1,t=d,c=1,r=1,i=1",
                   payload: [1, 2, 3])
 
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
@@ -371,4 +387,5 @@ final class KittyGraphicsLifecycleTests {
         #expect(t.kittyGraphicsState.imagesById[1] != nil)
     }
 }
+
 #endif

@@ -41,10 +41,19 @@ For a guide on customization, see <doc:Customization>.
 
 - ``convertEol``
 - ``screenReaderMode``
+- ``initialBidiState``
+- ``maximumBidiParagraphRows``
+- ``initialBidiArrowKeySwap``
 
 ### Graphics
 
 - ``enableSixelReported``
+- ``kittyGraphics``
+- ``KittyGraphicsConfiguration``
+- ``KittyGraphicsConfiguration/LocalMediaPolicy``
+
+### Deprecated Kitty Graphics Configuration
+
 - ``kittyImageCacheLimitBytes``
 
 ### Colors

@@ -13,14 +13,22 @@ with a headless backend, or with a custom renderer. All input flows through the
 ``feed(buffer:)`` family of methods, and output is delivered through the delegate's
 ``TerminalDelegate/send(source:data:)`` callback.
 
-Instances are thread-safe: you can call ``feed(byteArray:)`` from a background
-queue and the terminal will synchronize internally.
+Use ``terminalLock`` to serialize direct access from different threads. The
+bundled views and ``HeadlessTerminal`` manage this lock for their operations.
+When you use a `Terminal` directly, hold the lock while you feed, query, or
+change terminal state, except for methods that explicitly copy state under one
+terminal lock themselves, such as ``inputStateSnapshot()``,
+``contentSnapshot(region:)``, and ``makeRenderSnapshot(scope:)``.
 
 ## Topics
 
 ### Creating a Terminal
 
 - ``init(delegate:options:)``
+
+### Synchronizing Access
+
+- ``terminalLock``
 
 ### Configuration
 
@@ -53,6 +61,8 @@ queue and the terminal will synchronize internally.
 - ``buffer``
 - ``BufferKind``
 - ``isCurrentBufferAlternate``
+- ``inputStateSnapshot()``
+- ``contentSnapshot(region:)``
 - ``getBufferAsData(kind:encoding:)``
 - ``getText(start:end:)``
 - ``getCharData(col:row:)``
@@ -77,6 +87,23 @@ queue and the terminal will synchronize internally.
 - ``hostCurrentDirectory``
 - ``hostCurrentDocument``
 
+### Program Status
+
+- <doc:ProgramStatus>
+- ``programStatusRecords``
+- ``programStatus(id:)``
+- ``clearProgramStatus(id:)``
+- ``programStatusProcessExited()``
+
+### Bidirectional Text
+
+- ``currentBidiState``
+- ``bidiArrowKeySwap``
+- ``bidiSupportEnabled``
+- ``bidiAutodetectDirection``
+- ``bidiRTLPreference``
+- ``bidiBoxMirroring``
+
 ### Cursor
 
 - ``getCursorLocation()``
@@ -86,8 +113,6 @@ queue and the terminal will synchronize internally.
 
 ### Scrolling
 
-- ``scroll(isWrapped:)``
-- ``emitLineFeed()``
 - ``getTopVisibleRow()``
 
 ### Display Updates
@@ -97,6 +122,7 @@ queue and the terminal will synchronize internally.
 - ``getUpdateRange()``
 - ``getScrollInvariantUpdateRange()``
 - ``clearUpdateRange()``
+- ``makeRenderSnapshot(scope:)``
 
 ### Mouse Events
 
@@ -105,6 +131,23 @@ queue and the terminal will synchronize internally.
 - ``sendEvent(buttonFlags:x:y:)``
 - ``sendEvent(buttonFlags:x:y:pixelX:pixelY:)``
 - ``sendMotion(buttonFlags:x:y:pixelX:pixelY:)``
+- ``sendHostMouse(action:button:modifiers:col:row:pixelX:pixelY:)``
+- ``hostPointerModes``
+
+### Host Input
+
+- ``hostInputModes``
+- ``sendHostKey(key:code:modifiers:eventType:text:shiftedKey:baseLayoutKey:)``
+- ``sendHostText(_:)``
+- ``sendHostTextPaste(_:allowUnsafe:)``
+
+### Viewport and Selection
+
+- ``viewportState()``
+- ``scrollViewport(_:absolute:)``
+- ``updateSelection(_:action:column:row:mode:)``
+- ``selectionState(_:)``
+- ``selectionText(_:)``
 
 ### Titles
 
@@ -127,6 +170,7 @@ queue and the terminal will synchronize internally.
 - ``makeCharData(attribute:scalar:size:)``
 - ``updateCharData(_:char:size:)``
 - ``updateCharData(_:code:size:)``
+- ``makePayload(value:)``
 
 ### Housekeeping
 
@@ -134,8 +178,12 @@ queue and the terminal will synchronize internally.
 
 ### Parser Extension
 
-- ``parser``
 - ``registerOscHandler(code:handler:)``
+
+### Kitty Graphics
+
+- ``kittyGraphicsRenderSnapshot()``
+- ``kittyGraphicsAdvanceAnimations(monotonicNanoseconds:)``
 
 ### Environment
 

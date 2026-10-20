@@ -1,11 +1,10 @@
 //
 //  KittyUnicodeTests.swift
 //
-#if os(macOS)
 import Testing
-import CoreGraphics
 @testable import SwiftTerm
 
+#if os(macOS) || os(Linux)
 final class KittyUnicodeTests {
 
     private func decodePlaceholders(line: BufferLine, row: Int, cols: Int, terminal: Terminal) -> [KittyPlaceholderCell] {
@@ -109,14 +108,14 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementNone() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "hello\r\nworld\r\n1\r\n2")
         #expect(placeholderRuns(in: t).isEmpty)
     }
 
     @Test func testUnicodePlacementSingleRowCol() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{10EEEE}\u{0305}\u{0305}")
         let runs = placeholderRuns(in: t)
@@ -129,7 +128,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementContinuationBreak() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{10EEEE}\u{0305}\u{0305}")
         t.feed(text: "\u{10EEEE}\u{0305}\u{030E}")
@@ -148,7 +147,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementContinuationWithDiacritics() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{10EEEE}\u{0305}\u{0305}")
         t.feed(text: "\u{10EEEE}\u{0305}\u{030D}")
@@ -163,7 +162,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementContinuationNoCol() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{10EEEE}\u{0305}")
         t.feed(text: "\u{10EEEE}\u{0305}")
@@ -178,7 +177,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementContinuationNoDiacritics() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{10EEEE}")
         t.feed(text: "\u{10EEEE}")
@@ -193,7 +192,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementRunEnding() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{10EEEE}\u{0305}\u{0305}")
         t.feed(text: "\u{10EEEE}\u{0305}\u{030D}")
@@ -208,7 +207,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementRunStartingMiddle() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 10, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "ABC")
         t.feed(text: "\u{10EEEE}\u{0305}\u{0305}")
@@ -224,7 +223,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementImageIdPalette() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{1b}[38;5;42m\u{10EEEE}\u{0305}\u{0305}")
         let runs = placeholderRuns(in: t)
@@ -236,7 +235,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementImageIdHighBits() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{1b}[38;5;42m\u{10EEEE}\u{0305}\u{0305}\u{030E}")
         let runs = placeholderRuns(in: t)
@@ -248,7 +247,7 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodePlacementPlacementIdPalette() {
-        let h = HeadlessTerminal(queue: SwiftTermTests.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
         let t = h.terminal!
         t.feed(text: "\u{1b}[38;5;42m\u{1b}[58;5;21m\u{10EEEE}\u{0305}\u{0305}")
         let runs = placeholderRuns(in: t)
@@ -259,11 +258,44 @@ final class KittyUnicodeTests {
         #expect(runs[0].placeholderCol == 0)
     }
 
+    @Test func testUnicodePlacementTrueColorIdsUseRGBByteOrder() {
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let t = h.terminal!
+        t.feed(text: "\u{1b}[38;2;66;172;138m\u{1b}[58;2;17;34;51m\u{10EEEE}\u{0305}\u{0305}")
+        let runs = placeholderRuns(in: t)
+        #expect(runs.count == 1)
+        #expect(runs[0].imageId == 0x42AC8A)
+        #expect(runs[0].placementId == 0x112233)
+    }
+
+    @Test func testUnicodePlacementTrueColorIdComposesWithHighByteDiacritic() {
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let t = h.terminal!
+        t.feed(text: "\u{1b}[38;2;66;172;138m\u{10EEEE}\u{0305}\u{0305}\u{030E}")
+        let runs = placeholderRuns(in: t)
+        #expect(runs.count == 1)
+        #expect(runs[0].imageId == 0x0242AC8A)
+    }
+
+    @Test func testUnicodePlacementTrueColorMatchesTransmittedImageAndPlacementIds() {
+        let h = HeadlessTerminal(queue: SwiftTermTestSupport.queue, options: TerminalOptions(cols: 5, rows: 5)) { _ in }
+        let t = h.terminal!
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+        t.feed(text: "\u{1b}_Ga=T,f=100,t=d,i=4369546,p=1122867,U=1,c=1,r=1,q=2;\(png)\u{1b}\\")
+        t.feed(text: "\u{1b}[38;2;66;172;138m\u{1b}[58;2;17;34;51m\u{10EEEE}\u{0305}\u{0305}")
+
+        let runs = placeholderRuns(in: t)
+        #expect(t.kittyGraphicsState.imagesById[0x42AC8A] != nil)
+        #expect(runs.count == 1)
+        #expect(runs[0].imageId == 0x42AC8A)
+        #expect(runs[0].placementId == 0x112233)
+    }
+
     @Test func testUnicodeRenderPlacementDog4x2() {
-        let placement = KittyPlaceholderRenderPlacement.compute(imageSize: CGSize(width: 500, height: 306),
+        let placement = KittyPlaceholderRenderPlacement.compute(imageSize: KittyPlaceholderSize(width: 500, height: 306),
                                                                 placementCols: 4,
                                                                 placementRows: 2,
-                                                                cellSize: CGSize(width: 36, height: 80),
+                                                                cellSize: KittyPlaceholderSize(width: 36, height: 80),
                                                                 col: 0,
                                                                 row: 0,
                                                                 width: 4,
@@ -277,10 +309,10 @@ final class KittyUnicodeTests {
         #expect(placement?.destWidth == 144)
         #expect(placement?.destHeight == 44)
 
-        let placement2 = KittyPlaceholderRenderPlacement.compute(imageSize: CGSize(width: 500, height: 306),
+        let placement2 = KittyPlaceholderRenderPlacement.compute(imageSize: KittyPlaceholderSize(width: 500, height: 306),
                                                                  placementCols: 4,
                                                                  placementRows: 2,
-                                                                 cellSize: CGSize(width: 36, height: 80),
+                                                                 cellSize: KittyPlaceholderSize(width: 36, height: 80),
                                                                  col: 0,
                                                                  row: 1,
                                                                  width: 4,
@@ -296,10 +328,10 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodeRenderPlacementDog2x2BlankCells() {
-        let placement = KittyPlaceholderRenderPlacement.compute(imageSize: CGSize(width: 500, height: 306),
+        let placement = KittyPlaceholderRenderPlacement.compute(imageSize: KittyPlaceholderSize(width: 500, height: 306),
                                                                 placementCols: 2,
                                                                 placementRows: 2,
-                                                                cellSize: CGSize(width: 36, height: 80),
+                                                                cellSize: KittyPlaceholderSize(width: 36, height: 80),
                                                                 col: 0,
                                                                 row: 0,
                                                                 width: 4,
@@ -313,10 +345,10 @@ final class KittyUnicodeTests {
         #expect(placement?.destWidth == 72)
         #expect(placement?.destHeight == 22)
 
-        let placement2 = KittyPlaceholderRenderPlacement.compute(imageSize: CGSize(width: 500, height: 306),
+        let placement2 = KittyPlaceholderRenderPlacement.compute(imageSize: KittyPlaceholderSize(width: 500, height: 306),
                                                                  placementCols: 2,
                                                                  placementRows: 2,
-                                                                 cellSize: CGSize(width: 36, height: 80),
+                                                                 cellSize: KittyPlaceholderSize(width: 36, height: 80),
                                                                  col: 0,
                                                                  row: 1,
                                                                  width: 4,
@@ -332,10 +364,10 @@ final class KittyUnicodeTests {
     }
 
     @Test func testUnicodeRenderPlacementDog1x1() {
-        let placement = KittyPlaceholderRenderPlacement.compute(imageSize: CGSize(width: 500, height: 306),
+        let placement = KittyPlaceholderRenderPlacement.compute(imageSize: KittyPlaceholderSize(width: 500, height: 306),
                                                                 placementCols: 1,
                                                                 placementRows: 1,
-                                                                cellSize: CGSize(width: 36, height: 80),
+                                                                cellSize: KittyPlaceholderSize(width: 36, height: 80),
                                                                 col: 0,
                                                                 row: 0,
                                                                 width: 4,
@@ -350,4 +382,5 @@ final class KittyUnicodeTests {
         #expect(placement?.destHeight == 22)
     }
 }
+
 #endif

@@ -6,7 +6,9 @@
 //  Copyright © 2020 Miguel de Icaza. All rights reserved.
 //
 
+#if !SWIFTTERM_EMBEDDED
 import Foundation
+#endif
 
 /// Strategy used to derive the 256-color palette from the first 16 ANSI colors.
 public enum Ansi256PaletteStrategy: Sendable {
@@ -25,16 +27,16 @@ public enum Ansi256PaletteStrategy: Sendable {
  * This represents the colors used in SwiftTerm, in particular for cells and backgrounds
  * in 16-bit RGB mode
  */
-public class Color: Hashable {
+public final class Color: Hashable, Sendable {
     /// Red component 0..65535
-    public var red: UInt16
+    public let red: UInt16
     /// Green component 0..65535
-    public var green: UInt16
+    public let green: UInt16
     /// Blue component 0..65535
-    public var blue: UInt16
+    public let blue: UInt16
         
-    static var defaultForeground = Color (red: 35389, green: 35389, blue: 35389)
-    static var defaultBackground = Color (red: 0, green: 0, blue: 0)
+    static let defaultForeground = Color (red: 35389, green: 35389, blue: 35389)
+    static let defaultBackground = Color (red: 0, green: 0, blue: 0)
     
     public static func == (lhs: Color, rhs: Color) -> Bool {
         lhs.red == rhs.red && lhs.blue == rhs.blue && lhs.green == rhs.green
@@ -46,7 +48,8 @@ public class Color: Hashable {
         hasher.combine(blue)
     }
     
-    static let paleColors: [Color] = [
+    /// A muted, Tango-inspired 16-color ANSI palette
+    public static let paleColors: [Color] = [
         // dark colors
         Color (red8: 0x2e, green8: 0x34, blue8: 0x36),
         Color (red8: 0xcc, green8: 0x00, blue8: 0x00),
@@ -68,7 +71,8 @@ public class Color: Hashable {
         Color (red8: 0xee, green8: 0xee, blue8: 0xec)
     ]
     
-    static let vgaColors: [Color] = [
+    /// The classic VGA 16-color ANSI palette
+    public static let vgaColors: [Color] = [
         // dark colors
         Color (red8: 0, green8: 0, blue8: 0),
         Color (red8: 170, green8: 0, blue8: 0),
@@ -88,7 +92,8 @@ public class Color: Hashable {
         Color (red8: 255, green8: 255, blue8: 255),
     ]
     
-    static let terminalAppColors: [Color] = [
+    /// The 16-color ANSI palette used by Apple's Terminal.app; this is the palette installed by default
+    public static let terminalAppColors: [Color] = [
         Color (red8: 0, green8: 0, blue8: 0),
         Color (red8: 194, green8: 54, blue8: 33),
         Color (red8: 37, green8: 188, blue8: 36),
@@ -107,7 +112,8 @@ public class Color: Hashable {
         Color (red8: 233, green8: 235, blue8: 235),
     ]
     
-    static let xtermColors: [Color] = [
+    /// The 16-color ANSI palette used by xterm
+    public static let xtermColors: [Color] = [
         Color (red8: 0, green8: 0, blue8: 0),
         Color (red8: 205, green8: 0, blue8: 0),
         Color (red8: 0, green8: 205, blue8: 0),
@@ -126,7 +132,8 @@ public class Color: Hashable {
         Color (red8: 255, green8: 255, blue8: 255),
     ]
     
-    static let defaultInstalledColors: [Color] = [
+    /// An alternative default 16-color ANSI palette
+    public static let defaultInstalledColors: [Color] = [
         Color (red8: 0, green8: 0, blue8: 0),
         Color (red8: 153, green8: 0, blue8: 1),
         Color (red8: 0, green8: 166, blue8: 3),
@@ -154,15 +161,23 @@ public class Color: Hashable {
         case .xterm:
             return generateXtermPalette(initialColors: initialColors)
         case .base16Lab:
+#if SWIFTTERM_EMBEDDED
+            return generateXtermPalette(initialColors: initialColors)
+#else
             return generateBase16LabPalette(initialColors: initialColors,
                                             backgroundColor: backgroundColor,
                                             foregroundColor: foregroundColor,
                                             harmonious: false)
+#endif
         case .base16LabHarmonious:
+#if SWIFTTERM_EMBEDDED
+            return generateXtermPalette(initialColors: initialColors)
+#else
             return generateBase16LabPalette(initialColors: initialColors,
                                             backgroundColor: backgroundColor,
                                             foregroundColor: foregroundColor,
                                             harmonious: true)
+#endif
         }
     }
 
@@ -189,6 +204,7 @@ public class Color: Hashable {
         return colors
     }
 
+#if !SWIFTTERM_EMBEDDED
     private static func generateBase16LabPalette(initialColors: [Color],
                                                   backgroundColor: Color?,
                                                   foregroundColor: Color?,
@@ -315,14 +331,13 @@ public class Color: Hashable {
         }
     }
     
-    // Contructs a color from 8 bit values, this can be made public,
-    // but then we probably should enforce the values to not go
-    // beyond 8 bits.   Otherwise, this can throw at runtime due to overflow.
-    init(red8: UInt16, green8: UInt16, blue8: UInt16)
+#endif
+    /// Constructs a color from 8-bit component values (0...255); values above 255 are clamped
+    public init(red8: UInt16, green8: UInt16, blue8: UInt16)
     {
-        self.red = red8 * 257
-        self.green = green8 * 257
-        self.blue = blue8 * 257
+        self.red = min (red8, 255) * 257
+        self.green = min (green8, 255) * 257
+        self.blue = min (blue8, 255) * 257
     }
 
     // Contructs a color from 4 bit values, this can be made public,
@@ -346,12 +361,45 @@ public class Color: Hashable {
     
     func formatAsXcolor () -> String
     {
-        let rs = String(format:"%04x", red)
-        let gs = String(format:"%04x", green)
-        let bs = String(format:"%04x", blue)
+        let rs = String(red, radix: 16).leftPadding(toLength: 4, withPad: "0")
+        let gs = String(green, radix: 16).leftPadding(toLength: 4, withPad: "0")
+        let bs = String(blue, radix: 16).leftPadding(toLength: 4, withPad: "0")
         return "rgb:\(rs)/\(gs)/\(bs)"
     }
-    
+
+    /// Formats the color as an X11-style "rgb:rrrr/gggg/bbbb" specification (16 bits per channel, lossless)
+    public func formatted () -> String
+    {
+        return formatAsXcolor ()
+    }
+
+    /// Parses an X11-style color specification: "#rgb", "#rrggbb", "#rrrgggbbb", "#rrrrggggbbbb"
+    /// or "rgb:r/g/b" forms with 1-4 hex digits per channel; returns nil if the string is not valid
+    public static func parse (_ spec: String) -> Color?
+    {
+        // The internal parseColor is lenient (it treats unparsable hex digits
+        // as zero, which is fine for the OSC paths that feed it); validate
+        // here so that the documented returns-nil-on-invalid contract holds
+        func isHex (_ s: Substring) -> Bool {
+            !s.isEmpty && s.allSatisfy { $0.isHexDigit }
+        }
+        if spec.hasPrefix ("#") {
+            let digits = spec.dropFirst ()
+            guard [3, 6, 9, 12].contains (digits.count), isHex (digits) else {
+                return nil
+            }
+        } else if spec.hasPrefix ("rgb:") {
+            let channels = spec.dropFirst (4).split (separator: "/", omittingEmptySubsequences: false)
+            guard channels.count == 3, channels.allSatisfy ({ $0.count <= 4 && isHex ($0) }) else {
+                return nil
+            }
+        } else {
+            return nil
+        }
+        return parseColor (ArraySlice ([UInt8] (spec.utf8)))
+    }
+
+
     static func parseColor (_ data: ArraySlice<UInt8>) -> Color?
     {
         // parses the hex value until the first "/" and returns both the value, and the number of bytes used
@@ -416,7 +464,7 @@ public class Color: Hashable {
             case 3:
                 let (r, _) = parseHex (rest [(p+0)..<(p+1)], &idx)
                 let (g, _) = parseHex (rest [(p+1)..<(p+2)], &idx)
-                let (b, _) = parseHex (rest [(p+1)..<(p+3)], &idx)
+                let (b, _) = parseHex (rest [(p+2)..<(p+3)], &idx)
                 return makeColor (r, g, b, scale: 1)
             case 6:
                 let (r, _) = parseHex (rest [(p+0)..<(p+2)], &idx)

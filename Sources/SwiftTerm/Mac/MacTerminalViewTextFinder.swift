@@ -12,14 +12,15 @@
 //  or `selectedRanges` onto the view side breaks keyboard input).
 //
 
-#if os(macOS)
+#if !SWIFTTERM_EMBEDDED && os(macOS)
 import AppKit
 import Foundation
 
 /// Exposes the terminal's visible + scrollback buffer to NSTextFinder as a
 /// flat NSString, and translates NSTextFinder's NSRange results back into
 /// the (row, col) positions that SelectionService + scrollTo consume.
-final class TerminalFindClient: NSObject, NSTextFinderClient {
+@MainActor
+final class TerminalFindClient: NSObject, @MainActor NSTextFinderClient {
     weak var owner: TerminalView?
 
     private var cachedString: String?
@@ -56,14 +57,17 @@ final class TerminalFindClient: NSObject, NSTextFinderClient {
 
     var selectedRanges: [NSValue] {
         get {
-            guard let owner,
-                  let selection = owner.selection,
-                  selection.active,
-                  selection.hasSelectionRange else {
+            guard let owner else { return [] }
+            let positions = owner.withTerminal { _ -> (Position, Position)? in
+                guard let selection = owner.selection, selection.active,
+                      selection.hasSelectionRange else { return nil }
+                return (selection.start, selection.end)
+            }
+            guard let positions else {
                 return [NSValue(range: NSRange(location: 0, length: 0))]
             }
             rebuildIfNeeded()
-            let (a, b) = orderedPositions(start: selection.start, end: selection.end)
+            let (a, b) = orderedPositions(start: positions.0, end: positions.1)
             let start = utf16Offset(for: a)
             let end = utf16Offset(for: b)
             let loc = min(start, end)
@@ -72,7 +76,7 @@ final class TerminalFindClient: NSObject, NSTextFinderClient {
         }
         set {
             guard let first = newValue.first?.rangeValue, first.length > 0 else {
-                owner?.selection?.selectNone()
+                owner?.withTerminal { _ in owner?.selection?.selectNone() }
                 return
             }
             applyRange(first, scroll: false)
@@ -118,49 +122,46 @@ final class TerminalFindClient: NSObject, NSTextFinderClient {
 
     private func rebuildIfNeeded() {
         if cachedString != nil { return }
-        guard let owner, let terminal = owner.terminal else {
-            cachedString = ""
-            rowOffsets = [0]
-            rowStrings = []
-            return
-        }
-        let buffer = terminal.displayBuffer
-        let lineCount = buffer.lines.count
-        var offsets = [Int]()
-        offsets.reserveCapacity(lineCount + 1)
-        var strings = [String]()
-        strings.reserveCapacity(lineCount)
-        var joined = String()
-        var offset = 0
+        guard let owner else { return }
+        owner.withTerminal { terminal in
+            let buffer = terminal.displayBuffer
+            let lineCount = buffer.lines.count
+            var offsets = [Int]()
+            offsets.reserveCapacity(lineCount + 1)
+            var strings = [String]()
+            strings.reserveCapacity(lineCount)
+            var joined = String()
+            var offset = 0
 
-        for row in 0..<lineCount {
-            offsets.append(offset)
-            let wrapped = (row + 1 < lineCount) ? buffer.lines[row + 1].isWrapped : false
-            let raw = buffer.translateBufferLineToString(
-                lineIndex: row,
-                trimRight: !wrapped,
-                startCol: 0,
-                endCol: -1,
-                skipNullCellsFollowingWide: true,
-                characterProvider: { [weak owner] cd in
-                    owner?.terminal.getCharacter(for: cd) ?? Character(" ")
+            for row in 0..<lineCount {
+                offsets.append(offset)
+                let wrapped = (row + 1 < lineCount) ? buffer.lines[row + 1].isWrapped : false
+                let raw = buffer.translateBufferLineToString(
+                    lineIndex: row,
+                    trimRight: !wrapped,
+                    startCol: 0,
+                    endCol: -1,
+                    skipNullCellsFollowingWide: true,
+                    characterProvider: { [weak owner] cd in
+                        owner?.terminal.getCharacter(for: cd) ?? Character(" ")
+                    }
+                )
+                let s = raw.replacingOccurrences(of: "\u{0}", with: " ")
+                strings.append(s)
+                joined.append(s)
+                offset += (s as NSString).length
+                // Break between non-wrapped lines so searches don't spill across logical rows.
+                if !wrapped {
+                    joined.append("\n")
+                    offset += 1
                 }
-            )
-            let s = raw.replacingOccurrences(of: "\u{0}", with: " ")
-            strings.append(s)
-            joined.append(s)
-            offset += (s as NSString).length
-            // Break between non-wrapped lines so searches don't spill across logical rows.
-            if !wrapped {
-                joined.append("\n")
-                offset += 1
             }
-        }
-        offsets.append(offset)
+            offsets.append(offset)
 
-        cachedString = joined
-        rowOffsets = offsets
-        rowStrings = strings
+            cachedString = joined
+            rowOffsets = offsets
+            rowStrings = strings
+        }
     }
 
     private func orderedPositions(start: Position, end: Position) -> (Position, Position) {
@@ -214,7 +215,7 @@ final class TerminalFindClient: NSObject, NSTextFinderClient {
         guard let owner, let selection = owner.selection else { return }
         let startPos = position(forUtf16Offset: range.location)
         let endPos = position(forUtf16Offset: range.location + range.length)
-        selection.setSelection(start: startPos, end: endPos)
+        owner.withTerminal { _ in selection.setSelection(start: startPos, end: endPos) }
         if scroll {
             owner.scrollToRevealSearchRow(startPos.row)
         }
@@ -223,7 +224,7 @@ final class TerminalFindClient: NSObject, NSTextFinderClient {
 
 // MARK: - NSTextFinderBarContainer
 
-extension TerminalView: NSTextFinderBarContainer {
+extension TerminalView: @MainActor NSTextFinderBarContainer {
     public var findBarView: NSView? {
         get { terminalFindBarView }
         set {
@@ -299,25 +300,24 @@ extension TerminalView {
     /// Show the native find bar; optionally seed from the current terminal selection.
     func showNativeFindBar(useSelection: Bool) {
         guard let finder = terminalTextFinder else { return }
-        if useSelection, let selection, selection.active, selection.hasSelectionRange {
+        if useSelection, withTerminal({ _ in selection.active && selection.hasSelectionRange }) {
             finder.performAction(.setSearchString)
         }
         finder.performAction(.showFindInterface)
     }
 
     func scrollToRevealSearchRow(_ row: Int) {
-        guard let terminal else { return }
-        let displayBuffer = terminal.displayBuffer
-        let rows = displayBuffer.rows
-        guard rows > 0, !terminal.isDisplayBufferAlternate else { return }
-        let upperVisible = displayBuffer.yDisp
-        let lowerVisible = displayBuffer.yDisp + rows - 1
-        if row >= upperVisible && row <= lowerVisible { return }
-        let maxScrollback = max(0, displayBuffer.lines.count - rows)
-        var target = row - rows / 2
-        if target < 0 { target = 0 }
-        if target > maxScrollback { target = maxScrollback }
-        scrollTo(row: target)
+        let target = withTerminal { terminal -> Int? in
+            let displayBuffer = terminal.displayBuffer
+            let rows = displayBuffer.rows
+            guard rows > 0, !terminal.isDisplayBufferAlternate else { return nil }
+            let upperVisible = displayBuffer.yDisp
+            let lowerVisible = displayBuffer.yDisp + rows - 1
+            if row >= upperVisible && row <= lowerVisible { return nil }
+            let maxScrollback = max(0, displayBuffer.lines.count - rows)
+            return min(max(0, row - rows / 2), maxScrollback)
+        }
+        if let target { scrollTo(row: target) }
     }
 }
 #endif

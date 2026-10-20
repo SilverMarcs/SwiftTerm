@@ -74,6 +74,7 @@ final class GhosttyImplicitLinkDetectionTests: TerminalDelegate {
             ("match news:comp.infosystems.www.servers.unix news links", "news:comp.infosystems.www.servers.unix"),
             ("Serving HTTP on :: port 8000 (http://[::]:8000/)", "http://[::]:8000/"),
             ("IPv6 address https://[2001:db8::1]:8080/path", "https://[2001:db8::1]:8080/path"),
+            ("IPv6 address https://[2001:db8::1]:8080(foo)", "https://[2001:db8::1]:8080"),
             ("../example.py", "../example.py"),
             ("../example.py ", "../example.py "),
             ("first time ../example.py contributor ", "../example.py"),
@@ -96,6 +97,32 @@ final class GhosttyImplicitLinkDetectionTests: TerminalDelegate {
         for (input, expected) in cases {
             assertImplicitMatch(input: input, expected: expected)
         }
+    }
+
+    // A space segment must not continue into a word that starts a new path,
+    // matching Ghostty's `(?!\.{0,2}\/)(?!~\/)` lookaheads.
+    @Test func testAdjacentPathsAreSeparateMatches() {
+        let cases: [(String, String)] = [
+            ("cp /a/b ./c/d", "/a/b"),
+            ("cp /a/b ./c/d", "./c/d"),
+            ("cp /a/b ../c/d", "../c/d"),
+            ("mv ~/x/y ~/z/w", "~/x/y"),
+            ("mv ~/x/y ~/z/w", "~/z/w"),
+            ("diff /tmp/a.txt /tmp/b.txt", "/tmp/a.txt"),
+            ("diff /tmp/a.txt /tmp/b.txt", "/tmp/b.txt"),
+            ("/tmp/test folder/file.txt", "/tmp/test folder/file.txt")
+        ]
+
+        for (input, expected) in cases {
+            assertImplicitMatch(input: input, expected: expected)
+        }
+    }
+
+    @Test func testSchemeURLWithLongTrailingPunctuation() {
+        let url = "https://example.com/a/b/c"
+        let input = url + String(repeating: ".", count: 20)
+
+        assertImplicitMatch(input: input, expected: url)
     }
 
     @Test func testGhosttyStyleImplicitNoMatchCases() {
