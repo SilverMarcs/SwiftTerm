@@ -1542,7 +1542,13 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
         if scrollerStyle == .overlay, !scroller.isHidden, scroller.frame.contains(point) {
             return scroller
         }
-        return super.hitTest(point)
+        let hit = super.hitTest(point)
+#if canImport(MetalKit)
+        if let hit, hit === metalView {
+            return self
+        }
+#endif
+        return hit
     }
 
     /// This method sents the `nativeForegroundColor` and `nativeBackgroundColor`
@@ -3777,6 +3783,7 @@ open class TerminalView: NSView, NSUserInterfaceValidations, TerminalDelegate {
     // Keep the viewport cell so output scrolling cannot look like pointer movement.
     private var pointerPressScreenGrid: Position?
     open override func mouseDown(with event: NSEvent) {
+        makeFirstResponder()
         didSelectionDrag = false
         previousPressureStage = 0
         forceClickHandledForCurrentPress = false
