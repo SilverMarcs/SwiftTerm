@@ -1210,9 +1210,10 @@ final class MetalTerminalRenderer {
         let encodeInterval = Profiling.begin(.metalEncode)
         defer { encodeInterval.end() }
         let bgColor = colorToSIMD(renderContext.effectiveBackgroundColor)
-        passDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(Double(bgColor.x),
-                                                                         Double(bgColor.y),
-                                                                         Double(bgColor.z),
+        // The layer composites premultiplied pixels, including its clear color.
+        passDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(Double(bgColor.x * bgColor.w),
+                                                                         Double(bgColor.y * bgColor.w),
+                                                                         Double(bgColor.z * bgColor.w),
                                                                          Double(bgColor.w))
         passDescriptor.colorAttachments[0].loadAction = .clear
 
